@@ -1,6 +1,6 @@
 const pkg = require("../package.json");
 const fs = require("fs");
-const child_process = require("child_process");
+const childProcess = require("child_process");
 const util = require("../src/util");
 
 util.polyfill();
@@ -25,6 +25,10 @@ if (! exists) {
     pkg.scripts.setup = pkg.scripts.setup.replace(/(git checkout )([^\s]+)/, `$1${newVersion}`);
     fs.writeFileSync("package.json", JSON.stringify(pkg, null, 4) + "\n");
 
+    // Also update package-lock.json
+    const npm = /^win/.test(process.platform) ? "npm.cmd" : "npm";
+    childProcess.spawnSync(npm, [ "install" ]);
+
     commit(newVersion);
     tag(newVersion);
 
@@ -32,10 +36,16 @@ if (! exists) {
     console.log("version exists");
 }
 
+/**
+ * Commit updated files
+ * @param {string} version Version to update to
+ * @returns {void}
+ * @throws Error when committing files
+ */
 function commit(version) {
     let msg = "Update to " + version;
 
-    let res = child_process.spawnSync("git", ["commit", "-m", msg, "-a"]);
+    let res = childProcess.spawnSync("git", [ "commit", "-m", msg, "-a" ]);
     let stdout = res.stdout.toString().trim();
     console.log(stdout);
 
@@ -44,18 +54,28 @@ function commit(version) {
     }
 }
 
+/**
+ * Create a tag with the specified version
+ * @param {string} version Tag to create
+ * @returns {void}
+ */
 function tag(version) {
-    let res = child_process.spawnSync("git", ["tag", version]);
+    let res = childProcess.spawnSync("git", [ "tag", version ]);
     console.log(res.stdout.toString().trim());
 }
 
+/**
+ * Check if a tag exists for the specified version
+ * @param {string} version Version to check
+ * @returns {boolean} Does the tag already exist
+ * @throws Version is not valid
+ */
 function tagExists(version) {
     if (! version) {
         throw new Error("invalid version");
     }
 
-    let res = child_process.spawnSync("git", ["tag", "-l", version]);
+    let res = childProcess.spawnSync("git", [ "tag", "-l", version ]);
 
     return res.stdout.toString().trim() === version;
 }
-

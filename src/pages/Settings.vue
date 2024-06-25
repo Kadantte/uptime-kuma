@@ -1,10 +1,19 @@
 <template>
     <div>
+        <div v-if="$root.isMobile" class="shadow-box mb-3">
+            <router-link to="/manage-status-page" class="nav-link">
+                <font-awesome-icon icon="stream" /> {{ $t("Status Pages") }}
+            </router-link>
+            <router-link to="/maintenance" class="nav-link">
+                <font-awesome-icon icon="wrench" /> {{ $t("Maintenance") }}
+            </router-link>
+        </div>
+
         <h1 v-show="show" class="mb-3">
             {{ $t("Settings") }}
         </h1>
 
-        <div class="shadow-box">
+        <div class="shadow-box shadow-box-settings">
             <div class="row">
                 <div v-if="showSubMenu" class="settings-menu col-lg-3 col-md-5">
                     <router-link
@@ -16,6 +25,14 @@
                             {{ item.title }}
                         </div>
                     </router-link>
+
+                    <!-- Logout Button -->
+                    <a v-if="$root.isMobile && $root.loggedIn && $root.socket.token !== 'autoLogin'" class="logout" @click.prevent="$root.logout">
+                        <div class="menu-item">
+                            <font-awesome-icon icon="sign-out-alt" />
+                            {{ $t("Logout") }}
+                        </div>
+                    </a>
                 </div>
                 <div class="settings-content col-lg-9 col-md-7">
                     <div v-if="currentPage" class="settings-content-header">
@@ -75,14 +92,29 @@ export default {
                 notifications: {
                     title: this.$t("Notifications"),
                 },
+                "reverse-proxy": {
+                    title: this.$t("Reverse Proxy"),
+                },
+                tags: {
+                    title: this.$t("Tags"),
+                },
                 "monitor-history": {
                     title: this.$t("Monitor History"),
+                },
+                "docker-hosts": {
+                    title: this.$t("Docker Hosts"),
+                },
+                "remote-browsers": {
+                    title: this.$t("Remote Browsers"),
                 },
                 security: {
                     title: this.$t("Security"),
                 },
-                backup: {
-                    title: this.$t("Backup"),
+                "api-keys": {
+                    title: this.$t("API Keys")
+                },
+                proxies: {
+                    title: this.$t("Proxies"),
                 },
                 about: {
                     title: this.$t("About"),
@@ -104,16 +136,28 @@ export default {
 
     methods: {
 
-        // For desktop only, mobile do nothing
+        /**
+         * Load the general settings page
+         * For desktop only, on mobile do nothing
+         * @returns {void}
+         */
         loadGeneralPage() {
             if (!this.currentPage && !this.$root.isMobile) {
                 this.$router.push("/settings/general");
             }
         },
 
+        /**
+         * Load settings from server
+         * @returns {void}
+         */
         loadSettings() {
             this.$root.getSocket().emit("getSettings", (res) => {
                 this.settings = res.data;
+
+                if (this.settings.checkUpdate === undefined) {
+                    this.settings.checkUpdate = true;
+                }
 
                 if (this.settings.searchEngineIndex === undefined) {
                     this.settings.searchEngineIndex = false;
@@ -123,19 +167,70 @@ export default {
                     this.settings.entryPage = "dashboard";
                 }
 
+                if (this.settings.nscd === undefined) {
+                    this.settings.nscd = true;
+                }
+
                 if (this.settings.keepDataPeriodDays === undefined) {
                     this.settings.keepDataPeriodDays = 180;
+                }
+
+                if (this.settings.tlsExpiryNotifyDays === undefined) {
+                    this.settings.tlsExpiryNotifyDays = [ 7, 14, 21 ];
+                }
+
+                if (this.settings.trustProxy === undefined) {
+                    this.settings.trustProxy = false;
                 }
 
                 this.settingsLoaded = true;
             });
         },
 
-        saveSettings() {
-            this.$root.getSocket().emit("setSettings", this.settings, (res) => {
-                this.$root.toastRes(res);
-                this.loadSettings();
-            });
+        /**
+         * Callback for saving settings
+         * @callback saveSettingsCB
+         * @param {object} res Result of operation
+         * @returns {void}
+         */
+
+        /**
+         * Save Settings
+         * @param {saveSettingsCB} callback Callback for socket response
+         * @param {string} currentPassword Only need for disableAuth to true
+         * @returns {void}
+         */
+        saveSettings(callback, currentPassword) {
+            let valid = this.validateSettings();
+            if (valid.success) {
+                this.$root.getSocket().emit("setSettings", this.settings, currentPassword, (res) => {
+                    this.$root.toastRes(res);
+                    this.loadSettings();
+
+                    if (callback) {
+                        callback();
+                    }
+                });
+            } else {
+                this.$root.toastError(valid.msg);
+            }
+        },
+
+        /**
+         * Ensure settings are valid
+         * @returns {object} Contains success state and error msg
+         */
+        validateSettings() {
+            if (this.settings.keepDataPeriodDays < 0) {
+                return {
+                    success: false,
+                    msg: this.$t("dataRetentionTimeError"),
+                };
+            }
+            return {
+                success: true,
+                msg: "",
+            };
         },
     }
 };
@@ -144,13 +239,13 @@ export default {
 <style lang="scss" scoped>
 @import "../assets/vars.scss";
 
-.shadow-box {
+.shadow-box-settings {
     padding: 20px;
     min-height: calc(100vh - 155px);
 }
 
 footer {
-    color: #aaa;
+    color: $secondary-text;
     font-size: 13px;
     margin-top: 20px;
     padding-bottom: 30px;
@@ -214,5 +309,9 @@ footer {
             }
         }
     }
+}
+
+.logout {
+    color: $danger !important;
 }
 </style>

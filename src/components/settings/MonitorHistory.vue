@@ -7,6 +7,7 @@
                         settings.keepDataPeriodDays,
                     ])
                 }}
+                {{ $t("infiniteRetention") }}
             </label>
             <input
                 id="keepDataPeriodDays"
@@ -14,9 +15,12 @@
                 type="number"
                 class="form-control"
                 required
-                min="1"
+                min="0"
                 step="1"
             />
+            <div v-if="settings.keepDataPeriodDays < 0" class="form-text">
+                {{ $t("dataRetentionTimeError") }}
+            </div>
         </div>
         <div class="my-4">
             <button class="btn btn-primary" type="button" @click="saveSettings()">
@@ -24,7 +28,7 @@
             </button>
         </div>
         <div class="my-4">
-            <div class="my-3">
+            <div v-if="$root.info.dbType === 'sqlite'" class="my-3">
                 <button class="btn btn-outline-info me-2" @click="shrinkDatabase">
                     {{ $t("Shrink Database") }} ({{ databaseSizeDisplay }})
                 </button>
@@ -52,10 +56,7 @@
 
 <script>
 import Confirm from "../../components/Confirm.vue";
-import { debug } from "../../util.ts";
-import { useToast } from "vue-toastification";
-
-const toast = useToast();
+import { log } from "../../util.ts";
 
 export default {
     components: {
@@ -90,44 +91,58 @@ export default {
     },
 
     methods: {
+        /**
+         * Get the current size of the database
+         * @returns {void}
+         */
         loadDatabaseSize() {
-            debug("load database size");
+            log.debug("monitorhistory", "load database size");
             this.$root.getSocket().emit("getDatabaseSize", (res) => {
                 if (res.ok) {
                     this.databaseSize = res.size;
-                    debug("database size: " + res.size);
+                    log.debug("monitorhistory", "database size: " + res.size);
                 } else {
-                    debug(res);
+                    log.debug("monitorhistory", res);
                 }
             });
         },
 
+        /**
+         * Request that the database is shrunk
+         * @returns {void}
+         */
         shrinkDatabase() {
             this.$root.getSocket().emit("shrinkDatabase", (res) => {
                 if (res.ok) {
                     this.loadDatabaseSize();
-                    toast.success("Done");
+                    this.$root.toastSuccess("Done");
                 } else {
-                    debug(res);
+                    log.debug("monitorhistory", res);
                 }
             });
         },
 
+        /**
+         * Show the dialog to confirm clearing stats
+         * @returns {void}
+         */
         confirmClearStatistics() {
             this.$refs.confirmClearStatistics.show();
         },
 
+        /**
+         * Send the request to clear stats
+         * @returns {void}
+         */
         clearStatistics() {
             this.$root.clearStatistics((res) => {
                 if (res.ok) {
                     this.$router.go();
                 } else {
-                    toast.error(res.msg);
+                    this.$root.toastError(res.msg);
                 }
             });
         },
     },
 };
 </script>
-
-<style></style>

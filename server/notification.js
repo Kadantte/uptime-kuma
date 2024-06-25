@@ -1,79 +1,151 @@
 const { R } = require("redbean-node");
-const Apprise = require("./notification-providers/apprise");
-const Discord = require("./notification-providers/discord");
-const Gotify = require("./notification-providers/gotify");
-const Line = require("./notification-providers/line");
-const LunaSea = require("./notification-providers/lunasea");
-const Mattermost = require("./notification-providers/mattermost");
-const Matrix = require("./notification-providers/matrix");
-const Octopush = require("./notification-providers/octopush");
-const PromoSMS = require("./notification-providers/promosms");
-const ClickSendSMS = require("./notification-providers/clicksendsms");
-const Pushbullet = require("./notification-providers/pushbullet");
-const Pushover = require("./notification-providers/pushover");
-const Pushy = require("./notification-providers/pushy");
-const TechulusPush = require("./notification-providers/techulus-push");
-const RocketChat = require("./notification-providers/rocket-chat");
-const Signal = require("./notification-providers/signal");
-const Slack = require("./notification-providers/slack");
-const SMTP = require("./notification-providers/smtp");
-const Teams = require("./notification-providers/teams");
-const Telegram = require("./notification-providers/telegram");
-const Webhook = require("./notification-providers/webhook");
-const Feishu = require("./notification-providers/feishu");
+const { log } = require("../src/util");
+const Alerta = require("./notification-providers/alerta");
+const AlertNow = require("./notification-providers/alertnow");
 const AliyunSms = require("./notification-providers/aliyun-sms");
-const DingDing = require("./notification-providers/dingding");
+const Apprise = require("./notification-providers/apprise");
 const Bark = require("./notification-providers/bark");
-const SerwerSMS = require("./notification-providers/serwersms");
-const Stackfield = require("./notification-providers/stackfield");
-const WeCom = require("./notification-providers/wecom");
+const Bitrix24 = require("./notification-providers/bitrix24");
+const ClickSendSMS = require("./notification-providers/clicksendsms");
+const CallMeBot = require("./notification-providers/call-me-bot");
+const SMSC = require("./notification-providers/smsc");
+const DingDing = require("./notification-providers/dingding");
+const Discord = require("./notification-providers/discord");
+const Feishu = require("./notification-providers/feishu");
+const FreeMobile = require("./notification-providers/freemobile");
 const GoogleChat = require("./notification-providers/google-chat");
 const Gorush = require("./notification-providers/gorush");
-const Alerta = require("./notification-providers/alerta");
+const Gotify = require("./notification-providers/gotify");
+const GrafanaOncall = require("./notification-providers/grafana-oncall");
+const HomeAssistant = require("./notification-providers/home-assistant");
+const HeiiOnCall = require("./notification-providers/heii-oncall");
+const Keep = require("./notification-providers/keep");
+const Kook = require("./notification-providers/kook");
+const Line = require("./notification-providers/line");
+const LineNotify = require("./notification-providers/linenotify");
+const LunaSea = require("./notification-providers/lunasea");
+const Matrix = require("./notification-providers/matrix");
+const Mattermost = require("./notification-providers/mattermost");
+const Nostr = require("./notification-providers/nostr");
+const Ntfy = require("./notification-providers/ntfy");
+const Octopush = require("./notification-providers/octopush");
+const OneBot = require("./notification-providers/onebot");
+const Opsgenie = require("./notification-providers/opsgenie");
+const PagerDuty = require("./notification-providers/pagerduty");
+const FlashDuty = require("./notification-providers/flashduty");
+const PagerTree = require("./notification-providers/pagertree");
+const PromoSMS = require("./notification-providers/promosms");
+const Pushbullet = require("./notification-providers/pushbullet");
+const PushDeer = require("./notification-providers/pushdeer");
+const Pushover = require("./notification-providers/pushover");
+const Pushy = require("./notification-providers/pushy");
+const RocketChat = require("./notification-providers/rocket-chat");
+const SerwerSMS = require("./notification-providers/serwersms");
+const Signal = require("./notification-providers/signal");
+const Slack = require("./notification-providers/slack");
+const SMSPartner = require("./notification-providers/smspartner");
+const SMSEagle = require("./notification-providers/smseagle");
+const SMTP = require("./notification-providers/smtp");
+const Squadcast = require("./notification-providers/squadcast");
+const Stackfield = require("./notification-providers/stackfield");
+const Teams = require("./notification-providers/teams");
+const TechulusPush = require("./notification-providers/techulus-push");
+const Telegram = require("./notification-providers/telegram");
+const Threema = require("./notification-providers/threema");
+const Twilio = require("./notification-providers/twilio");
+const Splunk = require("./notification-providers/splunk");
+const Webhook = require("./notification-providers/webhook");
+const WeCom = require("./notification-providers/wecom");
+const GoAlert = require("./notification-providers/goalert");
+const SMSManager = require("./notification-providers/smsmanager");
+const ServerChan = require("./notification-providers/serverchan");
+const ZohoCliq = require("./notification-providers/zoho-cliq");
+const SevenIO = require("./notification-providers/sevenio");
+const Whapi = require("./notification-providers/whapi");
+const GtxMessaging = require("./notification-providers/gtx-messaging");
+const Cellsynt = require("./notification-providers/cellsynt");
 
 class Notification {
 
     providerList = {};
 
+    /**
+     * Initialize the notification providers
+     * @returns {void}
+     * @throws Notification provider does not have a name
+     * @throws Duplicate notification providers in list
+     */
     static init() {
-        console.log("Prepare Notification Providers");
+        log.debug("notification", "Prepare Notification Providers");
 
         this.providerList = {};
 
         const list = [
-            new Apprise(),
+            new Alerta(),
+            new AlertNow(),
             new AliyunSms(),
+            new Apprise(),
+            new Bark(),
+            new Bitrix24(),
+            new ClickSendSMS(),
+            new CallMeBot(),
+            new SMSC(),
             new DingDing(),
             new Discord(),
-            new Teams(),
-            new Gotify(),
-            new Line(),
-            new LunaSea(),
             new Feishu(),
-            new Mattermost(),
-            new Matrix(),
-            new Octopush(),
-            new PromoSMS(),
-            new ClickSendSMS(),
-            new Pushbullet(),
-            new Pushover(),
-            new Pushy(),
-            new TechulusPush(),
-            new RocketChat(),
-            new Signal(),
-            new Slack(),
-            new SMTP(),
-            new Telegram(),
-            new Webhook(),
-            new Bark(),
-            new SerwerSMS(),
-            new Stackfield(),
-            new WeCom(),
+            new FreeMobile(),
             new GoogleChat(),
             new Gorush(),
-            new Alerta(),
+            new Gotify(),
+            new GrafanaOncall(),
+            new HomeAssistant(),
+            new HeiiOnCall(),
+            new Keep(),
+            new Kook(),
+            new Line(),
+            new LineNotify(),
+            new LunaSea(),
+            new Matrix(),
+            new Mattermost(),
+            new Nostr(),
+            new Ntfy(),
+            new Octopush(),
+            new OneBot(),
+            new Opsgenie(),
+            new PagerDuty(),
+            new FlashDuty(),
+            new PagerTree(),
+            new PromoSMS(),
+            new Pushbullet(),
+            new PushDeer(),
+            new Pushover(),
+            new Pushy(),
+            new RocketChat(),
+            new ServerChan(),
+            new SerwerSMS(),
+            new Signal(),
+            new SMSManager(),
+            new SMSPartner(),
+            new Slack(),
+            new SMSEagle(),
+            new SMTP(),
+            new Squadcast(),
+            new Stackfield(),
+            new Teams(),
+            new TechulusPush(),
+            new Telegram(),
+            new Threema(),
+            new Twilio(),
+            new Splunk(),
+            new Webhook(),
+            new WeCom(),
+            new GoAlert(),
+            new ZohoCliq(),
+            new SevenIO(),
+            new Whapi(),
+            new GtxMessaging(),
+            new Cellsynt(),
         ];
-
         for (let item of list) {
             if (! item.name) {
                 throw new Error("Notification provider without name");
@@ -87,13 +159,13 @@ class Notification {
     }
 
     /**
-     *
-     * @param notification : BeanModel
-     * @param msg : string General Message
-     * @param monitorJSON : object Monitor details (For Up/Down only)
-     * @param heartbeatJSON : object Heartbeat details (For Up/Down only)
+     * Send a notification
+     * @param {BeanModel} notification Notification to send
+     * @param {string} msg General Message
+     * @param {object} monitorJSON Monitor details (For Up/Down only)
+     * @param {object} heartbeatJSON Heartbeat details (For Up/Down only)
      * @returns {Promise<string>} Successful msg
-     * Throw Error with fail msg
+     * @throws Error with fail msg
      */
     static async send(notification, msg, monitorJSON = null, heartbeatJSON = null) {
         if (this.providerList[notification.type]) {
@@ -103,28 +175,35 @@ class Notification {
         }
     }
 
+    /**
+     * Save a notification
+     * @param {object} notification Notification to save
+     * @param {?number} notificationID ID of notification to update
+     * @param {number} userID ID of user who adds notification
+     * @returns {Promise<Bean>} Notification that was saved
+     */
     static async save(notification, notificationID, userID) {
-        let bean
+        let bean;
 
         if (notificationID) {
             bean = await R.findOne("notification", " id = ? AND user_id = ? ", [
                 notificationID,
                 userID,
-            ])
+            ]);
 
             if (! bean) {
-                throw new Error("notification not found")
+                throw new Error("notification not found");
             }
 
         } else {
-            bean = R.dispense("notification")
+            bean = R.dispense("notification");
         }
 
         bean.name = notification.name;
         bean.user_id = userID;
         bean.config = JSON.stringify(notification);
         bean.is_default = notification.isDefault || false;
-        await R.store(bean)
+        await R.store(bean);
 
         if (notification.applyExisting) {
             await applyNotificationEveryMonitor(bean.id, userID);
@@ -133,19 +212,29 @@ class Notification {
         return bean;
     }
 
+    /**
+     * Delete a notification
+     * @param {number} notificationID ID of notification to delete
+     * @param {number} userID ID of user who created notification
+     * @returns {Promise<void>}
+     */
     static async delete(notificationID, userID) {
         let bean = await R.findOne("notification", " id = ? AND user_id = ? ", [
             notificationID,
             userID,
-        ])
+        ]);
 
         if (! bean) {
-            throw new Error("notification not found")
+            throw new Error("notification not found");
         }
 
-        await R.trash(bean)
+        await R.trash(bean);
     }
 
+    /**
+     * Check if apprise exists
+     * @returns {boolean} Does the command apprise exist?
+     */
     static checkApprise() {
         let commandExistsSync = require("command-exists").sync;
         let exists = commandExistsSync("apprise");
@@ -154,6 +243,12 @@ class Notification {
 
 }
 
+/**
+ * Apply the notification to every monitor
+ * @param {number} notificationID ID of notification to apply
+ * @param {number} userID ID of user who created notification
+ * @returns {Promise<void>}
+ */
 async function applyNotificationEveryMonitor(notificationID, userID) {
     let monitors = await R.getAll("SELECT id FROM monitor WHERE user_id = ?", [
         userID
@@ -163,17 +258,17 @@ async function applyNotificationEveryMonitor(notificationID, userID) {
         let checkNotification = await R.findOne("monitor_notification", " monitor_id = ? AND notification_id = ? ", [
             monitors[i].id,
             notificationID,
-        ])
+        ]);
 
         if (! checkNotification) {
             let relation = R.dispense("monitor_notification");
             relation.monitor_id = monitors[i].id;
             relation.notification_id = notificationID;
-            await R.store(relation)
+            await R.store(relation);
         }
     }
 }
 
 module.exports = {
     Notification,
-}
+};

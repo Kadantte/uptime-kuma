@@ -1,22 +1,33 @@
 const NotificationProvider = require("./notification-provider");
-const child_process = require("child_process");
+const childProcessAsync = require("promisify-child-process");
 
 class Apprise extends NotificationProvider {
-
     name = "apprise";
 
+    /**
+     * @inheritdoc
+     */
     async send(notification, msg, monitorJSON = null, heartbeatJSON = null) {
-        let s = child_process.spawnSync("apprise", [ "-vv", "-b", msg, notification.appriseURL])
+        const okMsg = "Sent Successfully.";
 
-        let output = (s.stdout) ? s.stdout.toString() : "ERROR: maybe apprise not found";
+        const args = [ "-vv", "-b", msg, notification.appriseURL ];
+        if (notification.title) {
+            args.push("-t");
+            args.push(notification.title);
+        }
+        const s = await childProcessAsync.spawn("apprise", args, {
+            encoding: "utf8",
+        });
+
+        const output = (s.stdout) ? s.stdout.toString() : "ERROR: maybe apprise not found";
 
         if (output) {
 
             if (! output.includes("ERROR")) {
-                return "Sent Successfully";
+                return okMsg;
             }
 
-            throw new Error(output)
+            throw new Error(output);
         } else {
             return "No output from apprise";
         }

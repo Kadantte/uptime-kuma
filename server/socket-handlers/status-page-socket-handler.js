@@ -1,13 +1,18 @@
 const { R } = require("redbean-node");
-const { checkLogin, setSettings, setSetting } = require("../util-server");
+const { checkLogin, setSetting } = require("../util-server");
 const dayjs = require("dayjs");
-const { debug } = require("../../src/util");
+const { log } = require("../../src/util");
 const ImageDataURI = require("../image-data-uri");
 const Database = require("../database");
 const apicache = require("../modules/apicache");
 const StatusPage = require("../model/status_page");
-const server = require("../server");
+const { UptimeKumaServer } = require("../uptime-kuma-server");
 
+/**
+ * Socket handlers for status page
+ * @param {Socket} socket Socket.io instance to add listeners on
+ * @returns {void}
+ */
 module.exports.statusPageSocketHandler = (socket) => {
 
     // Post or edit incident
@@ -85,13 +90,35 @@ module.exports.statusPageSocketHandler = (socket) => {
         }
     });
 
+    socket.on("getStatusPage", async (slug, callback) => {
+        try {
+            checkLogin(socket);
+
+            let statusPage = await R.findOne("status_page", " slug = ? ", [
+                slug
+            ]);
+
+            if (!statusPage) {
+                throw new Error("No slug?");
+            }
+
+            callback({
+                ok: true,
+                config: await statusPage.toJSON(),
+            });
+        } catch (error) {
+            callback({
+                ok: false,
+                msg: error.message,
+            });
+        }
+    });
+
     // Save Status Page
     // imgDataUrl Only Accept PNG!
     socket.on("saveStatusPage", async (slug, config, imgDataUrl, publicGroupList, callback) => {
-
         try {
             checkLogin(socket);
-            apicache.clear();
 
             // Save Config
             let statusPage = await R.findOne("status_page", " slug = ? ", [
@@ -101,6 +128,8 @@ module.exports.statusPageSocketHandler = (socket) => {
             if (!statusPage) {
                 throw new Error("No slug?");
             }
+
+            checkSlug(config.slug);
 
             const header = "data:image/png;base64,";
 
@@ -119,21 +148,30 @@ module.exports.statusPageSocketHandler = (socket) => {
                 config.logo = `/upload/${filename}?t=` + Date.now();
 
             } else {
-                config.icon = imgDataUrl;
+                config.logo = imgDataUrl;
             }
 
             statusPage.slug = config.slug;
             statusPage.title = config.title;
             statusPage.description = config.description;
             statusPage.icon = config.logo;
+            statusPage.autoRefreshInterval = config.autoRefreshInterval,
             statusPage.theme = config.theme;
             //statusPage.published = ;
             //statusPage.search_engine_index = ;
             statusPage.show_tags = config.showTags;
             //statusPage.password = null;
+            statusPage.footer_text = config.footerText;
+            statusPage.custom_css = config.customCSS;
+            statusPage.show_powered_by = config.showPoweredBy;
+            statusPage.show_certificate_expiry = config.showCertificateExpiry;
             statusPage.modified_date = R.isoDateTime();
+            statusPage.google_analytics_tag_id = config.googleAnalyticsId;
 
             await R.store(statusPage);
+
+            await statusPage.updateDomainNameList(config.domainNameList);
+            await StatusPage.loadDomainMappingList();
 
             // Save Public Group List
             const groupIDList = [];
@@ -168,6 +206,11 @@ module.exports.statusPageSocketHandler = (socket) => {
                     relationBean.weight = monitorOrder++;
                     relationBean.group_id = groupBean.id;
                     relationBean.monitor_id = monitor.id;
+
+                    if (monitor.sendUrl !== undefined) {
+                        relationBean.send_url = monitor.sendUrl;
+                    }
+
                     await R.store(relationBean);
                 }
 
@@ -175,8 +218,8 @@ module.exports.statusPageSocketHandler = (socket) => {
                 group.id = groupBean.id;
             }
 
-            // Delete groups that not in the list
-            debug("Delete groups that not in the list");
+            // Delete groups that are not in the list
+            log.debug("socket", "Delete groups that are not in the list");
             const slots = groupIDList.map(() => "?").join(",");
 
             const data = [
@@ -185,11 +228,15 @@ module.exports.statusPageSocketHandler = (socket) => {
             ];
             await R.exec(`DELETE FROM \`group\` WHERE id NOT IN (${slots}) AND status_page_id = ?`, data);
 
+            const server = UptimeKumaServer.getInstance();
+
             // Also change entry page to new slug if it is the default one, and slug is changed.
             if (server.entryPage === "statusPage-" + slug && statusPage.slug !== slug) {
                 server.entryPage = "statusPage-" + statusPage.slug;
                 await setSetting("entryPage", server.entryPage, "general");
             }
+
+            apicache.clear();
 
             callback({
                 ok: true,
@@ -197,7 +244,7 @@ module.exports.statusPageSocketHandler = (socket) => {
             });
 
         } catch (error) {
-            console.error(error);
+            log.error("socket", error);
 
             callback({
                 ok: false,
@@ -227,22 +274,20 @@ module.exports.statusPageSocketHandler = (socket) => {
             // lower case only
             slug = slug.toLowerCase();
 
-            // Check slug a-z, 0-9, - only
-            // Regex from: https://stackoverflow.com/questions/22454258/js-regex-string-validation-for-slug
-            if (!slug.match(/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/)) {
-                throw new Error("Invalid Slug");
-            }
+            checkSlug(slug);
 
             let statusPage = R.dispense("status_page");
             statusPage.slug = slug;
             statusPage.title = title;
-            statusPage.theme = "light";
+            statusPage.theme = "auto";
             statusPage.icon = "";
+            statusPage.autoRefreshInterval = 300;
             await R.store(statusPage);
 
             callback({
                 ok: true,
-                msg: "OK!"
+                msg: "successAdded",
+                msgi18n: true,
             });
 
         } catch (error) {
@@ -256,6 +301,8 @@ module.exports.statusPageSocketHandler = (socket) => {
 
     // Delete a status page
     socket.on("deleteStatusPage", async (slug, callback) => {
+        const server = UptimeKumaServer.getInstance();
+
         try {
             checkLogin(socket);
 
@@ -302,3 +349,26 @@ module.exports.statusPageSocketHandler = (socket) => {
         }
     });
 };
+
+/**
+ * Check slug a-z, 0-9, - only
+ * Regex from: https://stackoverflow.com/questions/22454258/js-regex-string-validation-for-slug
+ * @param {string} slug Slug to test
+ * @returns {void}
+ * @throws Slug is not valid
+ */
+function checkSlug(slug) {
+    if (typeof slug !== "string") {
+        throw new Error("Slug must be string");
+    }
+
+    slug = slug.trim();
+
+    if (!slug) {
+        throw new Error("Slug cannot be empty");
+    }
+
+    if (!slug.match(/^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$/)) {
+        throw new Error("Invalid Slug");
+    }
+}
