@@ -3,47 +3,73 @@
  * node "server/server.js"
  * DO NOT require("./server") in other modules, it likely creates circular dependency!
  */
+import {
+    initDayjs,
+    getSettings,
+    setSettings,
+    setting,
+    checkLogin,
+    allowDevAllOrigin,
+    printServerUrls,
+    allowDevOrigin,
+} from "./util";
+import { getRandomInt, isDevEnv, log, sleep } from "../src/util";
+import { auth, createHeaders, doubleCheckPassword, getDisableAuthSession, getSessionFromHeaders } from "./better-auth";
+import { createBetterAuthRouter, needSetup } from "./routers/better-auth-router";
+import { readApiKey } from "./auth";
+import { initAdminFromEnv } from "./initial-admin";
+import { betterAuthSocketHandler } from "./socket-handlers/better-auth-socket-handler";
+import { loadEnvFile } from "node:process";
+
 console.log("Welcome to Uptime Kuma");
 
-// As the log function need to use dayjs, it should be very top
-const dayjs = require("dayjs");
-dayjs.extend(require("dayjs/plugin/utc"));
-dayjs.extend(require("./modules/dayjs/plugin/timezone"));
-dayjs.extend(require("dayjs/plugin/customParseFormat"));
+initDayjs();
 
 // Load environment variables from `.env`
-require("dotenv").config();
+try {
+    loadEnvFile();
+} catch (_) {}
 
 // Check Node.js Version
 const nodeVersion = process.versions.node;
 
 // Get the required Node.js version from package.json
 const requiredNodeVersions = require("../package.json").engines.node;
-const bannedNodeVersions = " < 14 || 20.0.* || 20.1.* || 20.2.* || 20.3.* ";
+const bannedNodeVersions = "< 24";
 console.log(`Your Node.js version: ${nodeVersion}`);
 
 const semver = require("semver");
-const requiredNodeVersionsComma = requiredNodeVersions.split("||").map((version) => version.trim()).join(", ");
+const requiredNodeVersionsComma = requiredNodeVersions
+    .split("||")
+    .map((version) => version.trim())
+    .join(", ");
 
 // Exit Uptime Kuma immediately if the Node.js version is banned
 if (semver.satisfies(nodeVersion, bannedNodeVersions)) {
-    console.error("\x1b[31m%s\x1b[0m", `Error: Your Node.js version: ${nodeVersion} is not supported, please upgrade your Node.js to ${requiredNodeVersionsComma}.`);
+    console.error(
+        "\x1b[31m%s\x1b[0m",
+        `Error: Your Node.js version: ${nodeVersion} is not supported, please upgrade your Node.js to ${requiredNodeVersionsComma}.`
+    );
     process.exit(-1);
 }
 
 // Warning if the Node.js version is not in the support list, but it maybe still works
 if (!semver.satisfies(nodeVersion, requiredNodeVersions)) {
-    console.warn("\x1b[31m%s\x1b[0m", `Warning: Your Node.js version: ${nodeVersion} is not officially supported, please upgrade your Node.js to ${requiredNodeVersionsComma}.`);
+    console.warn(
+        "\x1b[31m%s\x1b[0m",
+        `Warning: Your Node.js version: ${nodeVersion} is not officially supported, please upgrade your Node.js to ${requiredNodeVersionsComma}.`
+    );
 }
 
 const args = require("args-parser")(process.argv);
-const { sleep, log, getRandomInt, genSecret, isDev } = require("../src/util");
 const config = require("./config");
+
+process.title = "uptime-kuma";
 
 log.debug("server", "Arguments");
 log.debug("server", args);
 
-if (! process.env.NODE_ENV) {
+if (!process.env.NODE_ENV) {
     process.env.NODE_ENV = "production";
 }
 
@@ -58,8 +84,26 @@ if (process.env.UPTIME_KUMA_WS_ORIGIN_CHECK === "bypass") {
     log.warn("server", "WebSocket Origin Check: " + process.env.UPTIME_KUMA_WS_ORIGIN_CHECK);
 }
 
+if (isDevEnv() || process.env.UPTIME_KUMA_DEBUG_INSPECTOR === "1") {
+    const inspector = require("inspector");
+    let inspectorHost = "127.0.0.1";
+
+    log.warn("server", "Node.js Inspector is enabled. You can connect to it via Chrome DevTools or VSCode.");
+    log.warn("server", "Node.js Inspector is listening on:", inspector.url());
+
+    if (process.env.UPTIME_KUMA_IS_CONTAINER === "1") {
+        log.warn(
+            "server",
+            "You need to expose the port 9229:9229 in your docker command or docker compose, and ssh tunneling in order to connect to it."
+        );
+        inspectorHost = "0.0.0.0";
+    }
+
+    inspector.open(9229, inspectorHost);
+}
+
 const checkVersion = require("./check-version");
-log.info("server", "Uptime Kuma Version: " + checkVersion.version);
+log.info("server", "Uptime Kuma Version:", checkVersion.version);
 
 log.info("server", "Loading modules");
 
@@ -68,45 +112,42 @@ const express = require("express");
 const expressStaticGzip = require("express-static-gzip");
 log.debug("server", "Importing redbean-node");
 const { R } = require("redbean-node");
-log.debug("server", "Importing jsonwebtoken");
-const jwt = require("jsonwebtoken");
 log.debug("server", "Importing http-graceful-shutdown");
 const gracefulShutdown = require("http-graceful-shutdown");
-log.debug("server", "Importing prometheus-api-metrics");
-const prometheusAPIMetrics = require("prometheus-api-metrics");
-const { passwordStrength } = require("check-password-strength");
-
-log.debug("server", "Importing 2FA Modules");
-const notp = require("notp");
-const base32 = require("thirty-two");
 
 const { UptimeKumaServer } = require("./uptime-kuma-server");
 const server = UptimeKumaServer.getInstance();
-const io = module.exports.io = server.io;
+const io = (module.exports.io = server.io);
 const app = server.app;
 
 log.debug("server", "Importing Monitor");
 const Monitor = require("./model/monitor");
-const User = require("./model/user");
 
 log.debug("server", "Importing Settings");
-const { getSettings, setSettings, setting, initJWTSecret, checkLogin, doubleCheckPassword, shake256, SHAKE256_LENGTH, allowDevAllOrigin,
-} = require("./util-server");
 
 log.debug("server", "Importing Notification");
 const { Notification } = require("./notification");
 Notification.init();
+log.debug("server", "Importing Web-Push");
+const webpush = require("web-push");
 
 log.debug("server", "Importing Database");
 const Database = require("./database");
 
 log.debug("server", "Importing Background Jobs");
 const { initBackgroundJobs, stopBackgroundJobs } = require("./jobs");
-const { loginRateLimiter, twoFaRateLimiter } = require("./rate-limiter");
-
+const { DeferredListsSender } = require("./login-lists");
+const { startStatsRefresh } = require("./stats-refresh");
 const { apiAuth } = require("./auth");
-const { login } = require("./auth");
-const passwordHash = require("./password-hash");
+const {
+    Prometheus,
+    startPrometheusMetrics,
+    getPrometheusAPIMiddleware,
+    stopPrometheusMetrics,
+} = require("./prometheus");
+const { UptimeCalculator } = require("./uptime-calculator");
+const { MonitorStats } = require("./monitor-stats");
+const { socketRoom } = require("./heartbeat-emit");
 
 const hostname = config.hostname;
 
@@ -116,14 +157,9 @@ if (hostname) {
 
 const port = config.port;
 
-const disableFrameSameOrigin = !!process.env.UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN || args["disable-frame-sameorigin"] || false;
+const disableFrameSameOrigin =
+    !!process.env.UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN || args["disable-frame-sameorigin"] || false;
 const cloudflaredToken = args["cloudflared-token"] || process.env.UPTIME_KUMA_CLOUDFLARED_TOKEN || undefined;
-
-// 2FA / notp verification defaults
-const twoFAVerifyOptions = {
-    "window": 1,
-    "time": 30
-};
 
 /**
  * Run unit test after the server is ready
@@ -132,20 +168,33 @@ const twoFAVerifyOptions = {
 const testMode = !!args["test"] || false;
 
 // Must be after io instantiation
-const { sendNotificationList, sendHeartbeatList, sendInfo, sendProxyList, sendDockerHostList, sendAPIKeyList, sendRemoteBrowserList } = require("./client");
+const {
+    sendNotificationList,
+    sendHeartbeatList,
+    sendHeartbeatLists,
+    getHeartbeatHistory,
+    sendInfo,
+    sendProxyList,
+    sendDockerHostList,
+    sendRemoteBrowserList,
+    sendMonitorTypeList,
+} = require("./client");
 const { statusPageSocketHandler } = require("./socket-handlers/status-page-socket-handler");
-const databaseSocketHandler = require("./socket-handlers/database-socket-handler");
+const { databaseSocketHandler } = require("./socket-handlers/database-socket-handler");
 const { remoteBrowserSocketHandler } = require("./socket-handlers/remote-browser-socket-handler");
-const TwoFA = require("./2fa");
 const StatusPage = require("./model/status_page");
-const { cloudflaredSocketHandler, autoStart: cloudflaredAutoStart, stop: cloudflaredStop } = require("./socket-handlers/cloudflared-socket-handler");
+const {
+    cloudflaredSocketHandler,
+    autoStart: cloudflaredAutoStart,
+    stop: cloudflaredStop,
+} = require("./socket-handlers/cloudflared-socket-handler");
 const { proxySocketHandler } = require("./socket-handlers/proxy-socket-handler");
 const { dockerSocketHandler } = require("./socket-handlers/docker-socket-handler");
 const { maintenanceSocketHandler } = require("./socket-handlers/maintenance-socket-handler");
 const { apiKeySocketHandler } = require("./socket-handlers/api-key-socket-handler");
 const { generalSocketHandler } = require("./socket-handlers/general-socket-handler");
 const { Settings } = require("./settings");
-const apicache = require("./modules/apicache");
+const apicache = require("./utils/response-cache");
 const { resetChrome } = require("./monitor-types/real-browser-monitor-type");
 const { EmbeddedMariaDB } = require("./embedded-mariadb");
 const { SetupDatabase } = require("./setup-database");
@@ -161,12 +210,6 @@ app.use(function (req, res, next) {
     res.removeHeader("X-Powered-By");
     next();
 });
-
-/**
- * Show Setup Page
- * @type {boolean}
- */
-let needSetup = false;
 
 (async () => {
     // Create a data directory
@@ -187,10 +230,24 @@ let needSetup = false;
         process.exit(1);
     }
 
+    // Init Better Auth
+    auth();
+
+    // Create the initial admin user from env, only when the database has no user yet
+    try {
+        await initAdminFromEnv();
+    } catch (e) {
+        log.error("auth", "Failed to create the initial admin user: " + e.message);
+        process.exit(1);
+    }
+
     // Database should be ready now
     await server.initAfterDatabaseReady();
     server.entryPage = await Settings.get("entryPage");
     await StatusPage.loadDomainMappingList();
+
+    log.debug("server", "Initializing Prometheus");
+    await Prometheus.init();
 
     log.debug("server", "Adding route");
 
@@ -216,10 +273,8 @@ let needSetup = false;
 
             let slug = StatusPage.domainMappingList[hostname];
             await StatusPage.handleStatusPageResponse(response, server.indexHTML, slug);
-
         } else if (uptimeKumaEntryPage && uptimeKumaEntryPage.startsWith("statusPage-")) {
             response.redirect("/status/" + uptimeKumaEntryPage.replace("statusPage-", ""));
-
         } else {
             response.redirect("/dashboard");
         }
@@ -233,7 +288,12 @@ let needSetup = false;
         });
     });
 
-    if (isDev) {
+    if (isDevEnv()) {
+        app.options("/*", async (request, response) => {
+            allowDevOrigin(request, response);
+            response.end();
+        });
+
         app.use(express.urlencoded({ extended: true }));
         app.post("/test-webhook", async (request, response) => {
             log.debug("test", request.headers);
@@ -248,10 +308,15 @@ let needSetup = false;
         });
     }
 
+    if (process.env.E2E_TEST === "1") {
+        const { e2eRouter } = await import("../test/e2e/e2e-router");
+        app.use(e2eRouter);
+    }
+
     // Robots.txt
     app.get("/robots.txt", async (_request, response) => {
         let txt = "User-agent: *\nDisallow:";
-        if (!await setting("searchEngineIndex")) {
+        if (!(await setting("searchEngineIndex"))) {
             txt += " /";
         }
         response.setHeader("Content-Type", "text/plain");
@@ -260,13 +325,30 @@ let needSetup = false;
 
     // Basic Auth Router here
 
-    // Prometheus API metrics  /metrics
-    // With Basic Auth using the first user's username/password
-    app.get("/metrics", apiAuth, prometheusAPIMetrics());
+    // Prometheus API  /metrics  (Basic Auth, only when enabled in the settings)
+    app.get(
+        "/metrics",
+        async (req, res, next) => {
+            try {
+                if ((await setting("prometheusApiEnabled")) !== true) {
+                    res.sendStatus(404);
+                    return;
+                }
+                next();
+            } catch (e) {
+                next(e);
+            }
+        },
+        apiAuth,
+        (req, res, next) => getPrometheusAPIMiddleware()(req, res, next)
+    );
 
-    app.use("/", expressStaticGzip("dist", {
-        enableBrotli: true,
-    }));
+    app.use(
+        "/",
+        expressStaticGzip("dist", {
+            enableBrotli: true,
+        })
+    );
 
     // ./data/upload
     app.use("/upload", express.static(Database.uploadDir));
@@ -279,9 +361,17 @@ let needSetup = false;
     const apiRouter = require("./routers/api-router");
     app.use(apiRouter);
 
+    // MCP Router, a TypeScript module, so `require` hands back its namespace
+    const mcpRouter = require("./routers/mcp-router").default;
+    app.use(mcpRouter);
+
     // Status Page Router
     const statusPageRouter = require("./routers/status-page-router");
     app.use(statusPageRouter);
+
+    // better auth API Router
+    const betterAuthRouter = await createBetterAuthRouter();
+    app.use(betterAuthRouter);
 
     // Universal Route Handler, must be at the end of all express routes.
     app.get("*", async (_request, response) => {
@@ -294,374 +384,35 @@ let needSetup = false;
 
     log.debug("server", "Adding socket handler");
     io.on("connection", async (socket) => {
-
         await sendInfo(socket, true);
 
-        if (needSetup) {
+        if (await needSetup()) {
             log.info("server", "Redirect to setup page");
             socket.emit("setup");
         }
 
-        // ***************************
-        // Public Socket API
-        // ***************************
+        let session;
 
-        socket.on("loginByToken", async (token, callback) => {
-            const clientIP = await server.getClientIP(socket);
+        if (!(await Settings.get("disableAuth"))) {
+            let apiKey;
 
-            log.info("auth", `Login by token. IP=${clientIP}`);
-
-            try {
-                let decoded = jwt.verify(token, server.jwtSecret);
-
-                log.info("auth", "Username from JWT: " + decoded.username);
-
-                let user = await R.findOne("user", " username = ? AND active = 1 ", [
-                    decoded.username,
-                ]);
-
-                if (user) {
-                    // Check if the password changed
-                    if (decoded.h !== shake256(user.password, SHAKE256_LENGTH)) {
-                        throw new Error("The token is invalid due to password change or old token");
-                    }
-
-                    log.debug("auth", "afterLogin");
-                    await afterLogin(socket, user);
-                    log.debug("auth", "afterLogin ok");
-
-                    log.info("auth", `Successfully logged in user ${decoded.username}. IP=${clientIP}`);
-
-                    callback({
-                        ok: true,
-                    });
-                } else {
-
-                    log.info("auth", `Inactive or deleted user ${decoded.username}. IP=${clientIP}`);
-
-                    callback({
-                        ok: false,
-                        msg: "authUserInactiveOrDeleted",
-                        msgi18n: true,
-                    });
-                }
-            } catch (error) {
-                log.error("auth", `Invalid token. IP=${clientIP}`);
-                if (error.message) {
-                    log.error("auth", error.message, `IP=${clientIP}`);
-                }
-                callback({
-                    ok: false,
-                    msg: "authInvalidToken",
-                    msgi18n: true,
-                });
+            // API keys only work as a socket login when the API & MCP is enabled
+            if (await Settings.get("apiEnabled")) {
+                apiKey = readApiKey(socket.request.headers.authorization);
             }
 
-        });
+            session = await getSessionFromHeaders(socket.request.headers.cookie, apiKey);
+        } else {
+            session = await getDisableAuthSession();
+        }
 
-        socket.on("login", async (data, callback) => {
-            const clientIP = await server.getClientIP(socket);
-
-            log.info("auth", `Login by username + password. IP=${clientIP}`);
-
-            // Checking
-            if (typeof callback !== "function") {
-                return;
-            }
-
-            if (!data) {
-                return;
-            }
-
-            // Login Rate Limit
-            if (!await loginRateLimiter.pass(callback)) {
-                log.info("auth", `Too many failed requests for user ${data.username}. IP=${clientIP}`);
-                return;
-            }
-
-            let user = await login(data.username, data.password);
-
-            if (user) {
-                if (user.twofa_status === 0) {
-                    await afterLogin(socket, user);
-
-                    log.info("auth", `Successfully logged in user ${data.username}. IP=${clientIP}`);
-
-                    callback({
-                        ok: true,
-                        token: User.createJWT(user, server.jwtSecret),
-                    });
-                }
-
-                if (user.twofa_status === 1 && !data.token) {
-
-                    log.info("auth", `2FA token required for user ${data.username}. IP=${clientIP}`);
-
-                    callback({
-                        tokenRequired: true,
-                    });
-                }
-
-                if (data.token) {
-                    let verify = notp.totp.verify(data.token, user.twofa_secret, twoFAVerifyOptions);
-
-                    if (user.twofa_last_token !== data.token && verify) {
-                        await afterLogin(socket, user);
-
-                        await R.exec("UPDATE `user` SET twofa_last_token = ? WHERE id = ? ", [
-                            data.token,
-                            socket.userID,
-                        ]);
-
-                        log.info("auth", `Successfully logged in user ${data.username}. IP=${clientIP}`);
-
-                        callback({
-                            ok: true,
-                            token: User.createJWT(user, server.jwtSecret),
-                        });
-                    } else {
-
-                        log.warn("auth", `Invalid token provided for user ${data.username}. IP=${clientIP}`);
-
-                        callback({
-                            ok: false,
-                            msg: "authInvalidToken",
-                            msgi18n: true,
-                        });
-                    }
-                }
-            } else {
-
-                log.warn("auth", `Incorrect username or password for user ${data.username}. IP=${clientIP}`);
-
-                callback({
-                    ok: false,
-                    msg: "authIncorrectCreds",
-                    msgi18n: true,
-                });
-            }
-
-        });
-
-        socket.on("logout", async (callback) => {
-            // Rate Limit
-            if (!await loginRateLimiter.pass(callback)) {
-                return;
-            }
-
-            socket.leave(socket.userID);
-            socket.userID = null;
-
-            if (typeof callback === "function") {
-                callback();
-            }
-        });
-
-        socket.on("prepare2FA", async (currentPassword, callback) => {
-            try {
-                if (!await twoFaRateLimiter.pass(callback)) {
-                    return;
-                }
-
-                checkLogin(socket);
-                await doubleCheckPassword(socket, currentPassword);
-
-                let user = await R.findOne("user", " id = ? AND active = 1 ", [
-                    socket.userID,
-                ]);
-
-                if (user.twofa_status === 0) {
-                    let newSecret = genSecret();
-                    let encodedSecret = base32.encode(newSecret);
-
-                    // Google authenticator doesn't like equal signs
-                    // The fix is found at https://github.com/guyht/notp
-                    // Related issue: https://github.com/louislam/uptime-kuma/issues/486
-                    encodedSecret = encodedSecret.toString().replace(/=/g, "");
-
-                    let uri = `otpauth://totp/Uptime%20Kuma:${user.username}?secret=${encodedSecret}`;
-
-                    await R.exec("UPDATE `user` SET twofa_secret = ? WHERE id = ? ", [
-                        newSecret,
-                        socket.userID,
-                    ]);
-
-                    callback({
-                        ok: true,
-                        uri: uri,
-                    });
-                } else {
-                    callback({
-                        ok: false,
-                        msg: "2faAlreadyEnabled",
-                        msgi18n: true,
-                    });
-                }
-            } catch (error) {
-                callback({
-                    ok: false,
-                    msg: error.message,
-                });
-            }
-        });
-
-        socket.on("save2FA", async (currentPassword, callback) => {
-            const clientIP = await server.getClientIP(socket);
-
-            try {
-                if (!await twoFaRateLimiter.pass(callback)) {
-                    return;
-                }
-
-                checkLogin(socket);
-                await doubleCheckPassword(socket, currentPassword);
-
-                await R.exec("UPDATE `user` SET twofa_status = 1 WHERE id = ? ", [
-                    socket.userID,
-                ]);
-
-                log.info("auth", `Saved 2FA token. IP=${clientIP}`);
-
-                callback({
-                    ok: true,
-                    msg: "2faEnabled",
-                    msgi18n: true,
-                });
-            } catch (error) {
-
-                log.error("auth", `Error changing 2FA token. IP=${clientIP}`);
-
-                callback({
-                    ok: false,
-                    msg: error.message,
-                });
-            }
-        });
-
-        socket.on("disable2FA", async (currentPassword, callback) => {
-            const clientIP = await server.getClientIP(socket);
-
-            try {
-                if (!await twoFaRateLimiter.pass(callback)) {
-                    return;
-                }
-
-                checkLogin(socket);
-                await doubleCheckPassword(socket, currentPassword);
-                await TwoFA.disable2FA(socket.userID);
-
-                log.info("auth", `Disabled 2FA token. IP=${clientIP}`);
-
-                callback({
-                    ok: true,
-                    msg: "2faDisabled",
-                    msgi18n: true,
-                });
-            } catch (error) {
-
-                log.error("auth", `Error disabling 2FA token. IP=${clientIP}`);
-
-                callback({
-                    ok: false,
-                    msg: error.message,
-                });
-            }
-        });
-
-        socket.on("verifyToken", async (token, currentPassword, callback) => {
-            try {
-                checkLogin(socket);
-                await doubleCheckPassword(socket, currentPassword);
-
-                let user = await R.findOne("user", " id = ? AND active = 1 ", [
-                    socket.userID,
-                ]);
-
-                let verify = notp.totp.verify(token, user.twofa_secret, twoFAVerifyOptions);
-
-                if (user.twofa_last_token !== token && verify) {
-                    callback({
-                        ok: true,
-                        valid: true,
-                    });
-                } else {
-                    callback({
-                        ok: false,
-                        msg: "authInvalidToken",
-                        msgi18n: true,
-                        valid: false,
-                    });
-                }
-
-            } catch (error) {
-                callback({
-                    ok: false,
-                    msg: error.message,
-                });
-            }
-        });
-
-        socket.on("twoFAStatus", async (callback) => {
-            try {
-                checkLogin(socket);
-
-                let user = await R.findOne("user", " id = ? AND active = 1 ", [
-                    socket.userID,
-                ]);
-
-                if (user.twofa_status === 1) {
-                    callback({
-                        ok: true,
-                        status: true,
-                    });
-                } else {
-                    callback({
-                        ok: true,
-                        status: false,
-                    });
-                }
-            } catch (error) {
-                callback({
-                    ok: false,
-                    msg: error.message,
-                });
-            }
-        });
-
-        socket.on("needSetup", async (callback) => {
-            callback(needSetup);
-        });
-
-        socket.on("setup", async (username, password, callback) => {
-            try {
-                if (passwordStrength(password).value === "Too weak") {
-                    throw new Error("Password is too weak. It should contain alphabetic and numeric characters. It must be at least 6 characters in length.");
-                }
-
-                if ((await R.knex("user").count("id as count").first()).count !== 0) {
-                    throw new Error("Uptime Kuma has been initialized. If you want to run setup again, please delete the database.");
-                }
-
-                let user = R.dispense("user");
-                user.username = username;
-                user.password = passwordHash.generate(password);
-                await R.store(user);
-
-                needSetup = false;
-
-                callback({
-                    ok: true,
-                    msg: "successAdded",
-                    msgi18n: true,
-                });
-
-            } catch (e) {
-                callback({
-                    ok: false,
-                    msg: e.message,
-                });
-            }
-        });
+        if (session) {
+            socket.userID = session.user.id;
+            socket.session = session;
+            socket.headers = createHeaders(socket.request.headers.cookie);
+            socket.emit("session", session.user.username);
+            log.debug("auth", `Session active:`, session.session.ipAddress, session.user.username);
+        }
 
         // ***************************
         // Auth Only API
@@ -686,7 +437,35 @@ let needSetup = false;
                 monitor.kafkaProducerBrokers = JSON.stringify(monitor.kafkaProducerBrokers);
                 monitor.kafkaProducerSaslOptions = JSON.stringify(monitor.kafkaProducerSaslOptions);
 
+                monitor.conditions = JSON.stringify(monitor.conditions);
+
+                monitor.rabbitmqNodes = JSON.stringify(monitor.rabbitmqNodes);
+
+                // Config is never imported as a whole, only its known keys are copied
+                const clientConfig = monitor.config;
+                delete monitor.config;
+
+                /*
+                 * List of frontend-only properties that should not be saved to the database.
+                 * Should clean up before saving to the database.
+                 */
+                const frontendOnlyProperties = [
+                    "humanReadableInterval",
+                    "globalpingdnsresolvetypeoptions",
+                    "responsecheck",
+                ];
+                for (const prop of frontendOnlyProperties) {
+                    if (prop in monitor) {
+                        delete monitor[prop];
+                    }
+                }
+
                 bean.import(monitor);
+                bean.applyClientConfig(clientConfig);
+                // Map camelCase frontend property to snake_case database column
+                if (monitor.retryOnlyOnStatusCodeFailure !== undefined) {
+                    bean.retry_only_on_status_code_failure = monitor.retryOnlyOnStatusCodeFailure;
+                }
                 bean.user_id = socket.userID;
 
                 bean.validate();
@@ -695,13 +474,13 @@ let needSetup = false;
 
                 await updateMonitorNotification(bean.id, notificationIDList);
 
-                await server.sendMonitorList(socket);
+                await server.sendUpdateMonitorIntoList(socket, bean.id);
 
                 if (monitor.active !== false) {
                     await startMonitor(socket.userID, bean.id);
                 }
 
-                log.info("monitor", `Added Monitor: ${monitor.id} User ID: ${socket.userID}`);
+                log.info("monitor", `Added Monitor: ${bean.id} User ID: ${socket.userID}`);
 
                 callback({
                     ok: true,
@@ -709,9 +488,7 @@ let needSetup = false;
                     msgi18n: true,
                     monitorID: bean.id,
                 });
-
             } catch (e) {
-
                 log.error("monitor", `Error adding Monitor: ${monitor.id} User ID: ${socket.userID}`);
 
                 callback({
@@ -727,11 +504,7 @@ let needSetup = false;
                 let removeGroupChildren = false;
                 checkLogin(socket);
 
-                let bean = await R.findOne("monitor", " id = ? ", [ monitor.id ]);
-
-                if (bean.user_id !== socket.userID) {
-                    throw new Error("Permission denied.");
-                }
+                let bean = await R.findOne("monitor", " id = ? ", [monitor.id]);
 
                 // Check if Parent is Descendant (would cause endless loop)
                 if (monitor.parent !== null) {
@@ -755,18 +528,24 @@ let needSetup = false;
                 bean.description = monitor.description;
                 bean.parent = monitor.parent;
                 bean.type = monitor.type;
+                bean.subtype = monitor.subtype;
                 bean.url = monitor.url;
+                bean.wsIgnoreSecWebsocketAcceptHeader = monitor.wsIgnoreSecWebsocketAcceptHeader;
+                bean.wsSubprotocol = monitor.wsSubprotocol;
                 bean.method = monitor.method;
                 bean.body = monitor.body;
+                bean.ipFamily = monitor.ipFamily;
                 bean.headers = monitor.headers;
                 bean.basic_auth_user = monitor.basic_auth_user;
                 bean.basic_auth_pass = monitor.basic_auth_pass;
+                bean.bearer_token = monitor.bearer_token;
                 bean.timeout = monitor.timeout;
                 bean.oauth_client_id = monitor.oauth_client_id;
                 bean.oauth_client_secret = monitor.oauth_client_secret;
                 bean.oauth_auth_method = monitor.oauth_auth_method;
                 bean.oauth_token_url = monitor.oauth_token_url;
                 bean.oauth_scopes = monitor.oauth_scopes;
+                bean.oauth_audience = monitor.oauth_audience;
                 bean.tlsCa = monitor.tlsCa;
                 bean.tlsCert = monitor.tlsCert;
                 bean.tlsKey = monitor.tlsKey;
@@ -777,6 +556,8 @@ let needSetup = false;
                 bean.game = monitor.game;
                 bean.maxretries = monitor.maxretries;
                 bean.port = parseInt(monitor.port);
+                bean.location = monitor.location;
+                bean.protocol = monitor.protocol;
 
                 if (isNaN(bean.port)) {
                     bean.port = null;
@@ -786,10 +567,14 @@ let needSetup = false;
                 bean.invertKeyword = monitor.invertKeyword;
                 bean.ignoreTls = monitor.ignoreTls;
                 bean.expiryNotification = monitor.expiryNotification;
+                bean.domainExpiryNotification = monitor.domainExpiryNotification;
                 bean.upsideDown = monitor.upsideDown;
                 bean.packetSize = monitor.packetSize;
                 bean.maxredirects = monitor.maxredirects;
                 bean.accepted_statuscodes_json = JSON.stringify(monitor.accepted_statuscodes);
+                bean.save_response = monitor.saveResponse;
+                bean.save_error_response = monitor.saveErrorResponse;
+                bean.response_max_length = monitor.responseMaxLength;
                 bean.dns_resolve_type = monitor.dns_resolve_type;
                 bean.dns_resolve_server = monitor.dns_resolve_server;
                 bean.pushToken = monitor.pushToken;
@@ -801,6 +586,7 @@ let needSetup = false;
                 bean.mqttTopic = monitor.mqttTopic;
                 bean.mqttSuccessMessage = monitor.mqttSuccessMessage;
                 bean.mqttCheckType = monitor.mqttCheckType;
+                bean.mqttWebsocketPath = monitor.mqttWebsocketPath;
                 bean.databaseConnectionString = monitor.databaseConnectionString;
                 bean.databaseQuery = monitor.databaseQuery;
                 bean.authMethod = monitor.authMethod;
@@ -826,11 +612,42 @@ let needSetup = false;
                 bean.kafkaProducerAllowAutoTopicCreation = monitor.kafkaProducerAllowAutoTopicCreation;
                 bean.kafkaProducerSaslOptions = JSON.stringify(monitor.kafkaProducerSaslOptions);
                 bean.kafkaProducerMessage = monitor.kafkaProducerMessage;
+                bean.cacheBust = monitor.cacheBust;
                 bean.kafkaProducerSsl = monitor.kafkaProducerSsl;
-                bean.kafkaProducerAllowAutoTopicCreation =
-                    monitor.kafkaProducerAllowAutoTopicCreation;
+                bean.kafkaProducerAllowAutoTopicCreation = monitor.kafkaProducerAllowAutoTopicCreation;
                 bean.gamedigGivenPortOnly = monitor.gamedigGivenPortOnly;
+                bean.gamedigToken = monitor.gamedigToken;
                 bean.remote_browser = monitor.remote_browser;
+                bean.screenshot_delay = monitor.screenshot_delay;
+                bean.smtpSecurity = monitor.smtpSecurity;
+                bean.snmpVersion = monitor.snmpVersion;
+                bean.snmpOid = monitor.snmpOid;
+                bean.jsonPathOperator = monitor.jsonPathOperator;
+                bean.retry_only_on_status_code_failure = Boolean(monitor.retryOnlyOnStatusCodeFailure);
+                bean.timeout = monitor.timeout;
+                bean.rabbitmqNodes = JSON.stringify(monitor.rabbitmqNodes);
+                bean.rabbitmqUsername = monitor.rabbitmqUsername;
+                bean.rabbitmqPassword = monitor.rabbitmqPassword;
+                bean.conditions = JSON.stringify(monitor.conditions);
+                bean.manual_status = monitor.manual_status;
+
+                // Known config keys only, so a payload never replaces the whole config
+                bean.applyClientConfig(monitor.config);
+
+                bean.sshUsername = monitor.sshUsername;
+                bean.sshPassword = monitor.sshPassword;
+                bean.sftpPath = monitor.sftpPath;
+                bean.sshPrivateKey = monitor.sshPrivateKey;
+                bean.sshPassphrase = monitor.sshPassphrase;
+                bean.sshAuthMethod = monitor.sshAuthMethod;
+                bean.ntp_stratum_threshold = monitor.ntpStratumThreshold;
+                bean.ntp_time_offset_threshold = monitor.ntpTimeOffsetThreshold;
+                bean.ntp_root_dispersion_threshold = monitor.ntpRootDispersionThreshold;
+
+                // ping advanced options
+                bean.ping_numeric = monitor.ping_numeric;
+                bean.ping_count = monitor.ping_count;
+                bean.ping_per_request_timeout = monitor.ping_per_request_timeout;
 
                 bean.validate();
 
@@ -842,11 +659,11 @@ let needSetup = false;
 
                 await updateMonitorNotification(bean.id, monitor.notificationIDList);
 
-                if (await bean.isActive()) {
+                if (await Monitor.isActive(bean.id, bean.active)) {
                     await restartMonitor(socket.userID, bean.id);
                 }
 
-                await server.sendMonitorList(socket);
+                await server.sendUpdateMonitorIntoList(socket, bean.id);
 
                 callback({
                     ok: true,
@@ -854,7 +671,6 @@ let needSetup = false;
                     msgi18n: true,
                     monitorID: bean.id,
                 });
-
             } catch (e) {
                 log.error("monitor", e);
                 callback({
@@ -886,17 +702,53 @@ let needSetup = false;
 
                 log.info("monitor", `Get Monitor: ${monitorID} User ID: ${socket.userID}`);
 
-                let bean = await R.findOne("monitor", " id = ? AND user_id = ? ", [
-                    monitorID,
-                    socket.userID,
-                ]);
-
+                let monitor = await R.findOne("monitor", " id = ? ", [monitorID]);
+                const monitorData = [{ id: monitor.id, active: monitor.active }];
+                const preloadData = await Monitor.preparePreloadData(monitorData);
                 callback({
                     ok: true,
-                    monitor: await bean.toJSON(),
+                    monitor: monitor.toJSON(preloadData),
                 });
-
             } catch (e) {
+                callback({
+                    ok: false,
+                    msg: e.message,
+                });
+            }
+        });
+
+        // partial { type, url, hostname, grpcUrl }
+        socket.on("checkDomain", async (partial, callback) => {
+            try {
+                checkLogin(socket);
+                const DomainExpiry = require("./model/domain_expiry");
+                const supportInfo = await DomainExpiry.checkSupport(partial);
+                callback({
+                    ok: true,
+                    domain: supportInfo.domain,
+                    tld: supportInfo.tld,
+                });
+            } catch (e) {
+                callback({
+                    ok: false,
+                    msg: e.message,
+                    msgi18n: !!e.msgi18n,
+                    meta: e.meta ?? {},
+                });
+            }
+        });
+
+        socket.on("getHeartbeatHistory", async (monitorID, callback) => {
+            try {
+                checkLogin(socket);
+                const data = await getHeartbeatHistory(monitorID);
+                log.debug("monitor", `History request #${monitorID} rows=${data.length}`);
+                callback({
+                    ok: true,
+                    data,
+                });
+            } catch (e) {
+                log.warn("monitor", `History request #${monitorID} failed: ${e.message}`);
                 callback({
                     ok: false,
                     msg: e.message,
@@ -916,16 +768,16 @@ let needSetup = false;
 
                 const sqlHourOffset = Database.sqlHourOffset();
 
-                let list = await R.getAll(`
+                let list = await R.getAll(
+                    `
                     SELECT *
                     FROM heartbeat
                     WHERE monitor_id = ?
                       AND time > ${sqlHourOffset}
                     ORDER BY time ASC
-                `, [
-                    monitorID,
-                    -period,
-                ]);
+                `,
+                    [monitorID, -period]
+                );
 
                 callback({
                     ok: true,
@@ -944,14 +796,13 @@ let needSetup = false;
             try {
                 checkLogin(socket);
                 await startMonitor(socket.userID, monitorID);
-                await server.sendMonitorList(socket);
+                await server.sendUpdateMonitorIntoList(socket, monitorID);
 
                 callback({
                     ok: true,
                     msg: "successResumed",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -964,14 +815,13 @@ let needSetup = false;
             try {
                 checkLogin(socket);
                 await pauseMonitor(socket.userID, monitorID);
-                await server.sendMonitorList(socket);
+                await server.sendUpdateMonitorIntoList(socket, monitorID);
 
                 callback({
                     ok: true,
                     msg: "successPaused",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -980,39 +830,88 @@ let needSetup = false;
             }
         });
 
-        socket.on("deleteMonitor", async (monitorID, callback) => {
+        socket.on("deleteMonitor", async (monitorID, deleteChildren, callback) => {
             try {
-                checkLogin(socket);
-
-                log.info("manage", `Delete Monitor: ${monitorID} User ID: ${socket.userID}`);
-
-                if (monitorID in server.monitorList) {
-                    await server.monitorList[monitorID].stop();
-                    delete server.monitorList[monitorID];
+                // Backward compatibility: if deleteChildren is omitted, the second parameter is the callback
+                if (typeof deleteChildren === "function") {
+                    callback = deleteChildren;
+                    deleteChildren = false;
                 }
+
+                checkLogin(socket);
 
                 const startTime = Date.now();
 
-                await R.exec("DELETE FROM monitor WHERE id = ? AND user_id = ? ", [
-                    monitorID,
-                    socket.userID,
-                ]);
+                // Check if this is a group monitor
+                const monitor = await R.findOne("monitor", " id = ? ", [monitorID]);
+
+                // Log with context about deletion type
+                if (monitor && monitor.type === "group") {
+                    if (deleteChildren) {
+                        log.info("manage", `Delete Group and Children: ${monitorID} User ID: ${socket.userID}`);
+                    } else {
+                        log.info("manage", `Delete Group (unlink children): ${monitorID} User ID: ${socket.userID}`);
+                    }
+                } else {
+                    log.info("manage", `Delete Monitor: ${monitorID} User ID: ${socket.userID}`);
+                }
+
+                if (monitor && monitor.type === "group") {
+                    // Get all children before processing
+                    const children = await Monitor.getChildren(monitorID);
+
+                    if (deleteChildren) {
+                        // Delete all child monitors recursively
+                        if (children && children.length > 0) {
+                            for (const child of children) {
+                                await Monitor.deleteMonitorRecursively(child.id);
+                                await server.sendDeleteMonitorFromList(socket, child.id);
+                            }
+                        }
+                    } else {
+                        // Unlink all children from the group (set parent to null)
+                        await Monitor.unlinkAllChildren(monitorID);
+
+                        // Notify frontend to update each child monitor's parent to null
+                        if (children && children.length > 0) {
+                            for (const child of children) {
+                                await server.sendUpdateMonitorIntoList(socket, child.id);
+                            }
+                        }
+                    }
+                }
+
+                // Delete the monitor itself
+                await Monitor.deleteMonitor(monitorID);
 
                 // Fix #2880
                 apicache.clear();
 
                 const endTime = Date.now();
 
-                log.info("DB", `Delete Monitor completed in : ${endTime - startTime} ms`);
+                // Log completion with context about children handling
+                if (monitor && monitor.type === "group") {
+                    if (deleteChildren) {
+                        log.info(
+                            "DB",
+                            `Delete Monitor completed (group and children deleted) in: ${endTime - startTime} ms`
+                        );
+                    } else {
+                        log.info(
+                            "DB",
+                            `Delete Monitor completed (group deleted, children unlinked) in: ${endTime - startTime} ms`
+                        );
+                    }
+                } else {
+                    log.info("DB", `Delete Monitor completed in: ${endTime - startTime} ms`);
+                }
 
                 callback({
                     ok: true,
                     msg: "successDeleted",
                     msgi18n: true,
                 });
-
-                await server.sendMonitorList(socket);
-
+                await server.sendDeleteMonitorFromList(socket, monitorID);
             } catch (e) {
                 callback({
                     ok: false,
@@ -1029,9 +928,8 @@ let needSetup = false;
 
                 callback({
                     ok: true,
-                    tags: list.map(bean => bean.toJSON()),
+                    tags: list.map((bean) => bean.toJSON()),
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1053,7 +951,6 @@ let needSetup = false;
                     ok: true,
                     tag: await bean.toJSON(),
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1066,7 +963,7 @@ let needSetup = false;
             try {
                 checkLogin(socket);
 
-                let bean = await R.findOne("tag", " id = ? ", [ tag.id ]);
+                let bean = await R.findOne("tag", " id = ? ", [tag.id]);
                 if (bean == null) {
                     callback({
                         ok: false,
@@ -1085,7 +982,6 @@ let needSetup = false;
                     msgi18n: true,
                     tag: await bean.toJSON(),
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1098,14 +994,13 @@ let needSetup = false;
             try {
                 checkLogin(socket);
 
-                await R.exec("DELETE FROM tag WHERE id = ? ", [ tagID ]);
+                await R.exec("DELETE FROM tag WHERE id = ? ", [tagID]);
 
                 callback({
                     ok: true,
                     msg: "successDeleted",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1124,12 +1019,13 @@ let needSetup = false;
                     value,
                 ]);
 
+                await server.sendUpdateMonitorIntoList(socket, monitorID);
+
                 callback({
                     ok: true,
                     msg: "successAdded",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1148,12 +1044,13 @@ let needSetup = false;
                     monitorID,
                 ]);
 
+                await server.sendUpdateMonitorIntoList(socket, monitorID);
+
                 callback({
                     ok: true,
                     msg: "successEdited",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1172,12 +1069,13 @@ let needSetup = false;
                     value,
                 ]);
 
+                await server.sendUpdateMonitorIntoList(socket, monitorID);
+
                 callback({
                     ok: true,
                     msg: "successDeleted",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1194,9 +1092,7 @@ let needSetup = false;
                 if (monitorID == null) {
                     count = await R.count("heartbeat", "important = 1");
                 } else {
-                    count = await R.count("heartbeat", "monitor_id = ? AND important = 1", [
-                        monitorID,
-                    ]);
+                    count = await R.count("heartbeat", "monitor_id = ? AND important = 1", [monitorID]);
                 }
 
                 callback({
@@ -1217,65 +1113,34 @@ let needSetup = false;
 
                 let list;
                 if (monitorID == null) {
-                    list = await R.find("heartbeat", `
+                    list = await R.find(
+                        "heartbeat",
+                        `
                         important = 1
                         ORDER BY time DESC
                         LIMIT ?
                         OFFSET ?
-                    `, [
-                        count,
-                        offset,
-                    ]);
+                    `,
+                        [count, offset]
+                    );
                 } else {
-                    list = await R.find("heartbeat", `
+                    list = await R.find(
+                        "heartbeat",
+                        `
                         monitor_id = ?
                         AND important = 1
                         ORDER BY time DESC
                         LIMIT ?
                         OFFSET ?
-                    `, [
-                        monitorID,
-                        count,
-                        offset,
-                    ]);
+                    `,
+                        [monitorID, count, offset]
+                    );
                 }
 
                 callback({
                     ok: true,
                     data: list,
                 });
-            } catch (e) {
-                callback({
-                    ok: false,
-                    msg: e.message,
-                });
-            }
-        });
-
-        socket.on("changePassword", async (password, callback) => {
-            try {
-                checkLogin(socket);
-
-                if (!password.newPassword) {
-                    throw new Error("Invalid new password");
-                }
-
-                if (passwordStrength(password.newPassword).value === "Too weak") {
-                    throw new Error("Password is too weak. It should contain alphabetic and numeric characters. It must be at least 6 characters in length.");
-                }
-
-                let user = await doubleCheckPassword(socket, password.currentPassword);
-                await user.resetPassword(password.newPassword);
-
-                server.disconnectAllSocketClients(user.id, socket.id);
-
-                callback({
-                    ok: true,
-                    token: User.createJWT(user, server.jwtSecret),
-                    msg: "successAuthChangePassword",
-                    msgi18n: true,
-                });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1297,7 +1162,6 @@ let needSetup = false;
                     ok: true,
                     data: data,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1317,7 +1181,7 @@ let needSetup = false;
                 // Enabled Auth + Want to Enable Auth => No Check
                 const currentDisabledAuth = await setting("disableAuth");
                 if (!currentDisabledAuth && data.disableAuth) {
-                    await doubleCheckPassword(socket, currentPassword);
+                    await doubleCheckPassword(socket.request.headers.cookie, currentPassword);
                 }
 
                 // Log out all clients if enabling auth
@@ -1328,9 +1192,19 @@ let needSetup = false;
 
                 const previousChromeExecutable = await Settings.get("chromeExecutable");
                 const previousNSCDStatus = await Settings.get("nscd");
+                const previousPrometheusApiEnabled = await Settings.get("prometheusApiEnabled");
 
                 await setSettings("general", data);
                 server.entryPage = data.entryPage;
+
+                // Start or stop the Prometheus sampling when the API is toggled
+                if (previousPrometheusApiEnabled !== data.prometheusApiEnabled) {
+                    if (data.prometheusApiEnabled) {
+                        startPrometheusMetrics();
+                    } else {
+                        stopPrometheusMetrics();
+                    }
+                }
 
                 // Also need to apply timezone globally
                 if (data.serverTimezone) {
@@ -1360,7 +1234,6 @@ let needSetup = false;
 
                 await sendInfo(socket);
                 await server.sendMaintenanceList(socket);
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1383,7 +1256,6 @@ let needSetup = false;
                     msgi18n: true,
                     id: notificationBean.id,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1396,7 +1268,7 @@ let needSetup = false;
             try {
                 checkLogin(socket);
 
-                await Notification.delete(notificationID, socket.userID);
+                await Notification.delete(notificationID);
                 await sendNotificationList(socket);
 
                 callback({
@@ -1404,7 +1276,6 @@ let needSetup = false;
                     msg: "successDeleted",
                     msgi18n: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1423,9 +1294,8 @@ let needSetup = false;
                     ok: true,
                     msg,
                 });
-
             } catch (e) {
-                console.error(e);
+                log.error("server", e);
 
                 callback({
                     ok: false,
@@ -1437,9 +1307,35 @@ let needSetup = false;
         socket.on("checkApprise", async (callback) => {
             try {
                 checkLogin(socket);
-                callback(Notification.checkApprise());
+                callback(await Notification.checkApprise());
             } catch (e) {
                 callback(false);
+            }
+        });
+
+        socket.on("getWebpushVapidPublicKey", async (callback) => {
+            try {
+                let publicVapidKey = await Settings.get("webpushPublicVapidKey");
+
+                if (!publicVapidKey) {
+                    log.debug("webpush", "Generating new VAPID keys");
+                    const vapidKeys = webpush.generateVAPIDKeys();
+
+                    await Settings.set("webpushPublicVapidKey", vapidKeys.publicKey);
+                    await Settings.set("webpushPrivateVapidKey", vapidKeys.privateKey);
+
+                    publicVapidKey = vapidKeys.publicKey;
+                }
+
+                callback({
+                    ok: true,
+                    msg: publicVapidKey,
+                });
+            } catch (e) {
+                callback({
+                    ok: false,
+                    msg: e.message,
+                });
             }
         });
 
@@ -1449,16 +1345,11 @@ let needSetup = false;
 
                 log.info("manage", `Clear Events Monitor: ${monitorID} User ID: ${socket.userID}`);
 
-                await R.exec("UPDATE heartbeat SET msg = ?, important = ? WHERE monitor_id = ? ", [
-                    "",
-                    "0",
-                    monitorID,
-                ]);
+                await R.exec("UPDATE heartbeat SET msg = ?, important = ? WHERE monitor_id = ? ", ["", "0", monitorID]);
 
                 callback({
                     ok: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1473,16 +1364,20 @@ let needSetup = false;
 
                 log.info("manage", `Clear Heartbeats Monitor: ${monitorID} User ID: ${socket.userID}`);
 
-                await R.exec("DELETE FROM heartbeat WHERE monitor_id = ?", [
-                    monitorID
-                ]);
+                await UptimeCalculator.clearStatistics(monitorID);
+
+                if (monitorID in server.monitorList) {
+                    const monitor = server.monitorList[monitorID];
+                    if (monitor.active) {
+                        await restartMonitor(socket.userID, monitorID);
+                    }
+                }
 
                 await sendHeartbeatList(socket, monitorID, true, true);
 
                 callback({
                     ok: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1497,20 +1392,19 @@ let needSetup = false;
 
                 log.info("manage", `Clear Statistics User ID: ${socket.userID}`);
 
-                await R.exec("DELETE FROM heartbeat");
-                await R.exec("DELETE FROM stat_daily");
-                await R.exec("DELETE FROM stat_hourly");
-                await R.exec("DELETE FROM stat_minutely");
+                await UptimeCalculator.clearAllStatistics();
 
                 // Restart all monitors to reset the stats
                 for (let monitorID in server.monitorList) {
-                    await restartMonitor(socket.userID, monitorID);
+                    const monitor = server.monitorList[monitorID];
+                    if (monitor.active) {
+                        await restartMonitor(socket.userID, monitorID);
+                    }
                 }
 
                 callback({
                     ok: true,
                 });
-
             } catch (e) {
                 callback({
                     ok: false,
@@ -1518,6 +1412,8 @@ let needSetup = false;
                 });
             }
         });
+
+        betterAuthSocketHandler(socket);
 
         // Status Page Socket Handler for admin only
         statusPageSocketHandler(socket);
@@ -1537,16 +1433,12 @@ let needSetup = false;
         // Better do anything after added all socket handlers here
         // ***************************
 
-        log.debug("auth", "check auto login");
-        if (await setting("disableAuth")) {
-            log.info("auth", "Disabled Auth: auto login to admin");
-            await afterLogin(socket, await R.findOne("user"));
-            socket.emit("autoLogin");
+        if (session) {
+            await afterLogin(socket, session.user);
         } else {
             socket.emit("loginRequired");
             log.debug("auth", "need auth");
         }
-
     });
 
     log.debug("server", "Init the server");
@@ -1559,21 +1451,30 @@ let needSetup = false;
 
     await server.start();
 
-    server.httpServer.listen(port, hostname, () => {
-        if (hostname) {
-            log.info("server", `Listening on ${hostname}:${port}`);
-        } else {
-            log.info("server", `Listening on ${port}`);
+    server.httpServer.listen(port, hostname, async () => {
+        printServerUrls("server", port, hostname, config.isSSL);
+
+        await startMonitors();
+
+        // Warm the dashboard/prometheus stats cache once, then refresh it periodically.
+        // Without this, every beat would load years of stat rows per monitor.
+        const statMonitorIDs = Object.keys(server.monitorList);
+        if (statMonitorIDs.length > 0) {
+            startStatsRefresh({
+                monitorIDs: statMonitorIDs,
+                refresh: (ids) => MonitorStats.refresh(ids),
+                onError: (e) => log.error("monitor", "Failed to refresh monitor stats: " + e.message),
+            });
         }
-        startMonitors();
+
+        // Put this here. Start background jobs after the db and server is ready to prevent clear up during db migration.
+        await initBackgroundJobs();
+
         checkVersion.startInterval();
     });
 
-    await initBackgroundJobs();
-
     // Start cloudflared at the end if configured
     await cloudflaredAutoStart(cloudflaredToken);
-
 })();
 
 /**
@@ -1584,9 +1485,7 @@ let needSetup = false;
  * @returns {Promise<void>}
  */
 async function updateMonitorNotification(monitorID, notificationIDList) {
-    await R.exec("DELETE FROM monitor_notification WHERE monitor_id = ? ", [
-        monitorID,
-    ]);
+    await R.exec("DELETE FROM monitor_notification WHERE monitor_id = ? ", [monitorID]);
 
     for (let notificationID in notificationIDList) {
         if (notificationIDList[notificationID]) {
@@ -1595,24 +1494,6 @@ async function updateMonitorNotification(monitorID, notificationIDList) {
             relation.notification_id = notificationID;
             await R.store(relation);
         }
-    }
-}
-
-/**
- * Check if a given user owns a specific monitor
- * @param {number} userID ID of user to check
- * @param {number} monitorID ID of monitor to check
- * @returns {Promise<void>}
- * @throws {Error} The specified user does not own the monitor
- */
-async function checkOwner(userID, monitorID) {
-    let row = await R.getRow("SELECT id FROM monitor WHERE id = ? AND user_id = ? ", [
-        monitorID,
-        userID,
-    ]);
-
-    if (! row) {
-        throw new Error("You do not own this monitor.");
     }
 }
 
@@ -1626,31 +1507,57 @@ async function checkOwner(userID, monitorID) {
 async function afterLogin(socket, user) {
     socket.userID = user.id;
     socket.join(user.id);
+    socket.join(socketRoom);
 
+    let tPerf = Date.now();
     let monitorList = await server.sendMonitorList(socket);
+    log.debug("perf", `[login] sendMonitorList ${Date.now() - tPerf}ms`);
+    tPerf = Date.now();
     await Promise.allSettled([
         sendInfo(socket),
         server.sendMaintenanceList(socket),
         sendNotificationList(socket),
         sendProxyList(socket),
         sendDockerHostList(socket),
-        sendAPIKeyList(socket),
         sendRemoteBrowserList(socket),
+        sendMonitorTypeList(socket),
     ]);
 
     await StatusPage.sendStatusPageList(io, socket);
+    log.debug("perf", `[login] misc lists ${Date.now() - tPerf}ms`);
+    tPerf = Date.now();
 
-    for (let monitorID in monitorList) {
-        await sendHeartbeatList(socket, monitorID);
-    }
+    const monitorIDs = Object.keys(monitorList);
 
-    for (let monitorID in monitorList) {
-        await Monitor.sendStats(io, monitorID, user.id);
-    }
+    // The heartbeat and stats lists are another ~1.2 MB with thousands of monitors.
+    // Send them only after the client has painted the monitor list, so the dashboard
+    // becomes usable immediately instead of waiting for all three payloads.
+    const sendDeferredLists = async () => {
+        let t = Date.now();
+        // One event with every monitor's recent heartbeats, instead of one query + event per monitor
+        await sendHeartbeatLists(socket, monitorIDs);
+        log.debug("perf", `[login] heartbeatLists ${Date.now() - t}ms`);
+        t = Date.now();
+        // Serve the dashboard numbers from the cache. On a cold cache join the in-flight
+        // aggregate scan instead of showing empty numbers; this runs after first paint.
+        let stats = MonitorStats.getCached(monitorIDs);
+        if (Object.keys(stats).length < monitorIDs.length) {
+            stats = await MonitorStats.refresh(monitorIDs);
+        }
+        io.to(socket.userID).emit("stats", stats);
+        MonitorStats.maybeRefresh(io, monitorIDs);
+        log.debug("perf", `[login] stats ${Date.now() - t}ms`);
+    };
+    const deferredLists = new DeferredListsSender({
+        send: sendDeferredLists,
+        onError: (e) => log.error("monitor", "Failed to send dashboard lists: " + e.message),
+    });
+    socket.once("dashboardRendered", deferredLists.onRendered);
+    socket.once("disconnect", () => deferredLists.dispose());
 
     // Set server timezone from client browser if not set
     // It should be run once only
-    if (! await Settings.get("initServerTimezone")) {
+    if (!(await Settings.get("initServerTimezone"))) {
         log.debug("server", "emit initServerTimezone");
         socket.emit("initServerTimezone");
     }
@@ -1668,27 +1575,7 @@ async function initDatabase(testMode = false) {
     log.info("server", "Connected to the database");
 
     // Patch the database
-    await Database.patch();
-
-    let jwtSecretBean = await R.findOne("setting", " `key` = ? ", [
-        "jwtSecret",
-    ]);
-
-    if (! jwtSecretBean) {
-        log.info("server", "JWT secret is not found, generate one.");
-        jwtSecretBean = await initJWTSecret();
-        log.info("server", "Stored JWT secret into database");
-    } else {
-        log.debug("server", "Load JWT secret from database.");
-    }
-
-    // If there is no record in user table, it is a new Uptime Kuma instance, need to setup
-    if ((await R.knex("user").count("id as count").first()).count === 0) {
-        log.info("server", "No user, need setup");
-        needSetup = true;
-    }
-
-    server.jwtSecret = jwtSecretBean.value;
+    await Database.patch(port, hostname);
 }
 
 /**
@@ -1698,18 +1585,11 @@ async function initDatabase(testMode = false) {
  * @returns {Promise<void>}
  */
 async function startMonitor(userID, monitorID) {
-    await checkOwner(userID, monitorID);
-
     log.info("manage", `Resume Monitor: ${monitorID} User ID: ${userID}`);
 
-    await R.exec("UPDATE monitor SET active = 1 WHERE id = ? AND user_id = ? ", [
-        monitorID,
-        userID,
-    ]);
+    await R.exec("UPDATE monitor SET active = 1 WHERE id = ? ", [monitorID]);
 
-    let monitor = await R.findOne("monitor", " id = ? ", [
-        monitorID,
-    ]);
+    let monitor = await R.findOne("monitor", " id = ? ", [monitorID]);
 
     if (monitor.id in server.monitorList) {
         await server.monitorList[monitor.id].stop();
@@ -1736,14 +1616,9 @@ async function restartMonitor(userID, monitorID) {
  * @returns {Promise<void>}
  */
 async function pauseMonitor(userID, monitorID) {
-    await checkOwner(userID, monitorID);
-
     log.info("manage", `Pause Monitor: ${monitorID} User ID: ${userID}`);
 
-    await R.exec("UPDATE monitor SET active = 0 WHERE id = ? AND user_id = ? ", [
-        monitorID,
-        userID,
-    ]);
+    await R.exec("UPDATE monitor SET active = 0 WHERE id = ? ", [monitorID]);
 
     if (monitorID in server.monitorList) {
         await server.monitorList[monitorID].stop();
@@ -1763,7 +1638,11 @@ async function startMonitors() {
     }
 
     for (let monitor of list) {
-        await monitor.start(io);
+        try {
+            await monitor.start(io);
+        } catch (e) {
+            log.error("monitor", e);
+        }
         // Give some delays, so all monitors won't make request at the same moment when just start the server.
         await sleep(getRandomInt(300, 1000));
     }
@@ -1808,11 +1687,11 @@ function finalFunction() {
 
 gracefulShutdown(server.httpServer, {
     signals: "SIGINT SIGTERM",
-    timeout: 30000,                   // timeout: 30 secs
-    development: false,               // not in dev mode
-    forceExit: true,                  // triggers process.exit() at the end of shutdown process
-    onShutdown: shutdownFunction,     // shutdown function (async) - e.g. for cleanup DB, ...
-    finally: finalFunction,            // finally function (sync) - e.g. for logging
+    timeout: 30000, // timeout: 30 secs
+    development: false, // not in dev mode
+    forceExit: true, // triggers process.exit() at the end of shutdown process
+    onShutdown: shutdownFunction, // shutdown function (async) - e.g. for cleanup DB, ...
+    finally: finalFunction, // finally function (sync) - e.g. for logging
 });
 
 // Catch unexpected errors here

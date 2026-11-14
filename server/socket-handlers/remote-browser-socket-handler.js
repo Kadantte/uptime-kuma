@@ -1,5 +1,5 @@
 const { sendRemoteBrowserList } = require("../client");
-const { checkLogin } = require("../util-server");
+const { checkLogin } = require("../util");
 const { RemoteBrowser } = require("../remote-browser");
 
 const { log } = require("../../src/util");
@@ -24,7 +24,6 @@ module.exports.remoteBrowserSocketHandler = (socket) => {
                 msgi18n: true,
                 id: remoteBrowserBean.id,
             });
-
         } catch (e) {
             callback({
                 ok: false,
@@ -37,7 +36,7 @@ module.exports.remoteBrowserSocketHandler = (socket) => {
         try {
             checkLogin(socket);
 
-            await RemoteBrowser.delete(dockerHostID, socket.userID);
+            await RemoteBrowser.delete(dockerHostID);
             await sendRemoteBrowserList(socket);
 
             callback({
@@ -45,7 +44,6 @@ module.exports.remoteBrowserSocketHandler = (socket) => {
                 msg: "successDeleted",
                 msgi18n: true,
             });
-
         } catch (e) {
             callback({
                 ok: false,
@@ -69,7 +67,6 @@ module.exports.remoteBrowserSocketHandler = (socket) => {
                 ok: true,
                 msg,
             });
-
         } catch (e) {
             log.error("remoteBrowser", e);
 

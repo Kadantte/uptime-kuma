@@ -1,4 +1,4 @@
-const { checkLogin } = require("../util-server");
+const { checkLogin } = require("../util");
 const Database = require("../database");
 
 /**
@@ -6,15 +6,14 @@ const Database = require("../database");
  * @param {Socket} socket Socket.io instance
  * @returns {void}
  */
-module.exports = (socket) => {
-
+module.exports.databaseSocketHandler = (socket) => {
     // Post or edit incident
     socket.on("getDatabaseSize", async (callback) => {
         try {
             checkLogin(socket);
             callback({
                 ok: true,
-                size: Database.getSize(),
+                size: await Database.getSize(),
             });
         } catch (error) {
             callback({
@@ -38,5 +37,4 @@ module.exports = (socket) => {
             });
         }
     });
-
 };

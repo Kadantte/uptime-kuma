@@ -1,12 +1,10 @@
 <template>
-    <div class="form-container" data-cy="setup-form">
+    <div v-if="ready" class="form-container">
         <div class="form">
             <form @submit.prevent="submit">
                 <div>
                     <object width="64" height="64" data="/icon.svg" />
-                    <div style="font-size: 28px; font-weight: bold; margin-top: 5px;">
-                        Uptime Kuma
-                    </div>
+                    <div style="font-size: 28px; font-weight: bold; margin-top: 5px">Uptime Kuma</div>
                 </div>
 
                 <p class="mt-3">
@@ -23,21 +21,50 @@
                 </div>
 
                 <div class="form-floating mt-3">
-                    <input id="floatingInput" v-model="username" type="text" class="form-control" :placeholder="$t('Username')" required data-cy="username-input">
+                    <input
+                        id="floatingInput"
+                        v-model="username"
+                        type="text"
+                        class="form-control"
+                        :placeholder="$t('Username')"
+                        required
+                        data-cy="username-input"
+                    />
                     <label for="floatingInput">{{ $t("Username") }}</label>
                 </div>
 
                 <div class="form-floating mt-3">
-                    <input id="floatingPassword" v-model="password" type="password" class="form-control" :placeholder="$t('Password')" required data-cy="password-input">
+                    <input
+                        id="floatingPassword"
+                        v-model="password"
+                        type="password"
+                        class="form-control"
+                        :placeholder="$t('Password')"
+                        required
+                        data-cy="password-input"
+                    />
                     <label for="floatingPassword">{{ $t("Password") }}</label>
                 </div>
 
                 <div class="form-floating mt-3">
-                    <input id="repeat" v-model="repeatPassword" type="password" class="form-control" :placeholder="$t('Repeat Password')" required data-cy="password-repeat-input">
+                    <input
+                        id="repeat"
+                        v-model="repeatPassword"
+                        type="password"
+                        class="form-control"
+                        :placeholder="$t('Repeat Password')"
+                        required
+                        data-cy="password-repeat-input"
+                    />
                     <label for="repeat">{{ $t("Repeat Password") }}</label>
                 </div>
 
-                <button class="w-100 btn btn-primary mt-3" type="submit" :disabled="processing" data-cy="submit-setup-form">
+                <button
+                    class="w-100 btn btn-primary mt-3"
+                    type="submit"
+                    :disabled="processing"
+                    data-cy="submit-setup-form"
+                >
                     {{ $t("Create") }}
                 </button>
             </form>
@@ -46,33 +73,43 @@
 </template>
 
 <script>
+import { checkFetch } from "../util";
+import { authClient, baseURL, login } from "../auth-client";
+
 export default {
     data() {
         return {
+            ready: false,
             processing: false,
             username: "",
             password: "",
             repeatPassword: "",
         };
     },
-    watch: {
-
-    },
-    mounted() {
-        // TODO: Check if it is a database setup
-
+    watch: {},
+    async mounted() {
         this.$root.getSocket().emit("needSetup", (needSetup) => {
-            if (! needSetup) {
+            console.log(needSetup);
+            if (!needSetup) {
                 this.$router.push("/");
+            } else {
+                this.ready = true;
             }
         });
+
+        // Check if /setup-database-info is available, if so, redirect to it
+        const res = await fetch(baseURL + "/setup-database-info");
+        const data = await res.json();
+        if (res.ok && data.needSetup) {
+            this.$router.push("/setup-database");
+        }
     },
     methods: {
         /**
          * Submit form data for processing
          * @returns {void}
          */
-        submit() {
+        async submit() {
             this.processing = true;
 
             if (this.password !== this.repeatPassword) {
@@ -81,19 +118,34 @@ export default {
                 return;
             }
 
-            this.$root.getSocket().emit("setup", this.username, this.password, (res) => {
+            try {
+                const response = await fetch(baseURL + "/api/setup", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        username: this.username,
+                        password: this.password,
+                    }),
+                });
+
+                await checkFetch(response);
+
+                // Login
+                await login(this.username, this.password);
+
+                // Redirect to home page
+                this.$router.push("/");
+            } catch (error) {
+                this.$root.toastRes({
+                    ok: false,
+                    msg: error.message,
+                    msgi18n: false,
+                });
+            } finally {
                 this.processing = false;
-                this.$root.toastRes(res);
-
-                if (res.ok) {
-                    this.processing = true;
-
-                    this.$root.login(this.username, this.password, "", () => {
-                        this.processing = false;
-                        this.$router.push("/");
-                    });
-                }
-            });
+            }
         },
     },
 };
@@ -128,7 +180,6 @@ export default {
 }
 
 .form {
-
     width: 100%;
     max-width: 330px;
     padding: 15px;

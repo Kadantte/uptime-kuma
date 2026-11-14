@@ -7,49 +7,138 @@
                         <h5 id="exampleModalLabel" class="modal-title">
                             {{ $t("Setup Notification") }}
                         </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" />
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" :aria-label="$t('Close')" />
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
                             <label for="notification-type" class="form-label">{{ $t("Notification Type") }}</label>
                             <select id="notification-type" v-model="notification.type" class="form-select">
-                                <option v-for="(name, type) in notificationNameList.regularList" :key="type" :value="type">{{ name }}</option>
+                                <optgroup :label="$t('notificationUniversal')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.universal"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationChatPlatforms')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.chatPlatforms"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationPushServices')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.pushServices"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationSmsServices')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.smsServices"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationEmail')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.email"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationIncidentManagement')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.incidentManagement"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationHomeAutomation')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.homeAutomation"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
+                                <optgroup :label="$t('notificationOther')">
+                                    <option
+                                        v-for="(name, type) in notificationNameList.other"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
+                                </optgroup>
                                 <optgroup :label="$t('notificationRegional')">
-                                    <option v-for="(name, type) in notificationNameList.regionalList" :key="type" :value="type">{{ name }}</option>
+                                    <option
+                                        v-for="(name, type) in notificationNameList.regional"
+                                        :key="type"
+                                        :value="type"
+                                    >
+                                        {{ name }}
+                                    </option>
                                 </optgroup>
                             </select>
                         </div>
 
                         <div class="mb-3">
                             <label for="notification-name" class="form-label">{{ $t("Friendly Name") }}</label>
-                            <input id="notification-name" v-model="notification.name" type="text" class="form-control" required>
+                            <input
+                                id="notification-name"
+                                v-model="notification.name"
+                                type="text"
+                                class="form-control"
+                                required
+                            />
                         </div>
 
                         <!-- form body -->
                         <component :is="currentForm" />
 
                         <div class="mb-3 mt-4">
-                            <hr class="dropdown-divider mb-4">
+                            <hr class="dropdown-divider mb-4" />
 
                             <div class="form-check form-switch">
-                                <input v-model="notification.isDefault" class="form-check-input" type="checkbox">
+                                <input v-model="notification.isDefault" class="form-check-input" type="checkbox" />
                                 <label class="form-check-label">{{ $t("Default enabled") }}</label>
                             </div>
                             <div class="form-text">
                                 {{ $t("enableDefaultNotificationDescription") }}
                             </div>
 
-                            <br>
+                            <br />
 
                             <div class="form-check form-switch">
-                                <input v-model="notification.applyExisting" class="form-check-input" type="checkbox">
+                                <input v-model="notification.applyExisting" class="form-check-input" type="checkbox" />
                                 <label class="form-check-label">{{ $t("Apply on all existing monitors") }}</label>
                             </div>
                         </div>
                     </div>
 
                     <div class="modal-footer">
-                        <button v-if="id" type="button" class="btn btn-danger" :disabled="processing" @click="deleteConfirm">
+                        <button
+                            v-if="id"
+                            type="button"
+                            class="btn btn-danger"
+                            :disabled="processing"
+                            @click="deleteConfirm"
+                        >
                             {{ $t("Delete") }}
                         </button>
                         <button type="button" class="btn btn-warning" :disabled="processing" @click="test">
@@ -65,7 +154,13 @@
         </div>
     </form>
 
-    <Confirm ref="confirmDelete" btn-style="btn-danger" :yes-text="$t('Yes')" :no-text="$t('No')" @yes="deleteNotification">
+    <Confirm
+        ref="confirmDelete"
+        btn-style="btn-danger"
+        :yes-text="$t('Yes')"
+        :no-text="$t('No')"
+        @yes="deleteNotification"
+    >
         {{ $t("deleteNotificationMsg") }}
     </Confirm>
 </template>
@@ -81,7 +176,7 @@ export default {
         Confirm,
     },
     props: {},
-    emits: [ "added" ],
+    emits: ["added"],
     data() {
         return {
             model: null,
@@ -96,7 +191,7 @@ export default {
                 type: null,
                 isDefault: false,
                 // Do not set default value here, please scroll to show()
-            }
+            },
         };
     },
 
@@ -109,102 +204,193 @@ export default {
         },
 
         notificationNameList() {
-            let regularList = {
-                "alerta": "Alerta",
-                "AlertNow": "AlertNow",
-                "apprise": this.$t("apprise"),
-                "Bark": "Bark",
-                "Bitrix24": "Bitrix24",
-                "clicksendsms": "ClickSend SMS",
-                "CallMeBot": "CallMeBot (WhatsApp, Telegram Call, Facebook Messanger)",
-                "discord": "Discord",
-                "GoogleChat": "Google Chat (Google Workspace)",
-                "gorush": "Gorush",
-                "gotify": "Gotify",
-                "GrafanaOncall": "Grafana Oncall",
-                "HeiiOnCall": "Heii On-Call",
-                "HomeAssistant": "Home Assistant",
-                "Keep": "Keep",
-                "Kook": "Kook",
-                "line": "LINE Messenger",
-                "LineNotify": "LINE Notify",
-                "lunasea": "LunaSea",
-                "matrix": "Matrix",
-                "mattermost": "Mattermost",
-                "nostr": "Nostr",
-                "ntfy": "Ntfy",
-                "octopush": "Octopush",
-                "OneBot": "OneBot",
-                "Opsgenie": "Opsgenie",
-                "PagerDuty": "PagerDuty",
-                "PagerTree": "PagerTree",
-                "pushbullet": "Pushbullet",
-                "PushByTechulus": "Push by Techulus",
-                "pushover": "Pushover",
-                "pushy": "Pushy",
+            // Universal - Adapters and multi-service wrapper libraries
+            let universal = {
+                apprise: this.$t("apprise"),
+                webhook: "Webhook",
+            };
+
+            // Chat Platforms - Messaging apps and team communication tools
+            let chatPlatforms = {
+                bale: "Bale",
+                Bitrix24: "Bitrix24",
+                ClickUp: "ClickUp",
+                discord: "Discord",
+                max: this.$t("maxMessenger"),
+                fluxer: "Fluxer",
+                GoogleChat: "Google Chat (Google Workspace)",
+                gorush: "Gorush",
+                gotify: "Gotify",
+                GrafanaOncall: "Grafana Oncall",
+                HaloPSA: "Halo PSA",
+                HeiiOnCall: "Heii On-Call",
+                HomeAssistant: "Home Assistant",
+                Keep: "Keep",
+                Kook: "Kook",
+                line: "LINE Messenger",
+                matrix: "Matrix",
+                mattermost: "Mattermost",
+                Milky: "Milky(QQ)",
+                nextcloudtalk: "Nextcloud Talk",
+                nostr: "Nostr",
+                OneChat: "OneChat",
+                OneBot: "OneBot",
+                pumble: "Pumble",
                 "rocket.chat": "Rocket.Chat",
-                "signal": "Signal",
-                "slack": "Slack",
-                "squadcast": "SquadCast",
-                "SMSEagle": "SMSEagle",
-                "SMSPartner": "SMS Partner",
-                "smtp": this.$t("smtp"),
-                "stackfield": "Stackfield",
-                "teams": "Microsoft Teams",
-                "telegram": "Telegram",
-                "threema": "Threema",
-                "twilio": "Twilio",
-                "Splunk": "Splunk",
-                "webhook": "Webhook",
-                "GoAlert": "GoAlert",
-                "ZohoCliq": "ZohoCliq",
-                "SevenIO": "SevenIO",
-                "whapi": "WhatsApp (Whapi)",
-                "gtxmessaging": "GtxMessaging",
-                "Cellsynt": "Cellsynt",
+                signal: "Signal",
+                slack: "Slack",
+                stackfield: "Stackfield",
+                teams: "Microsoft Teams",
+                telegram: "Telegram",
+                threema: "Threema",
+                ZohoCliq: "ZohoCliq",
+                CallMeBot: "CallMeBot (WhatsApp, Telegram Call, Facebook Messenger)",
+                whapi: "WhatsApp (Whapi)",
+                evolution: "WhatsApp (Evolution)",
+                waha: "WhatsApp (WAHA)",
+                Whatsapp360messenger: "WhatsApp (360messenger)",
+                openwa: "WhatsApp (OpenWA)",
             };
 
-            // Put notifications here if it's not supported in most regions or its documentation is not in English
-            let regionalList = {
-                "AliyunSMS": "AliyunSMS (阿里云短信服务)",
-                "DingDing": "DingDing (钉钉自定义机器人)",
-                "Feishu": "Feishu (飞书)",
-                "FlashDuty": "FlashDuty (快猫星云)",
-                "FreeMobile": "FreeMobile (mobile.free.fr)",
-                "PushDeer": "PushDeer",
-                "promosms": "PromoSMS",
-                "serwersms": "SerwerSMS.pl",
-                "SMSManager": "SmsManager (smsmanager.cz)",
-                "WeCom": "WeCom (企业微信群机器人)",
-                "ServerChan": "ServerChan (Server酱)",
-                "smsc": "SMSC",
+            // Push Services - Push notification services
+            let pushServices = {
+                Bark: "Bark",
+                gorush: "Gorush",
+                gotify: "Gotify",
+                lunasea: "LunaSea",
+                notifery: "Notifery",
+                notifyapp: "Notify!",
+                ntfy: "Ntfy",
+                pinglet: "Pinglet",
+                pushbullet: "Pushbullet",
+                PushByTechulus: "Push by Techulus",
+                pushover: "Pushover",
+                pushy: "Pushy",
+                signalgrid: "Signalgrid",
+                Webpush: "Webpush",
             };
 
-            // Sort by notification name
-            // No idea how, but it works
+            // SMS Services - SMS and voice call providers
+            let smsServices = {
+                clicksendsms: "ClickSend SMS",
+                Elks: "46elks",
+                Cellsynt: "Cellsynt",
+                gtxmessaging: "GtxMessaging",
+                octopush: "Octopush",
+                Onesender: "Onesender",
+                plivo: "Plivo",
+                SevenIO: "SevenIO",
+                SMSEagle: "SMSEagle",
+                SMSGateway: "SMS Gateway",
+                SMSPartner: "SMS Partner",
+                telnyx: "Telnyx",
+                Teltonika: this.$t("Teltonika SMS Gateway"),
+                twilio: "Twilio",
+            };
+
+            // Email - Email services
+            let email = {
+                Brevo: "Brevo",
+                MicrosoftGraph: this.$t("Microsoft Graph Email"),
+                Resend: "Resend",
+                SendGrid: "SendGrid",
+                smtp: this.$t("smtp"),
+                TurboSMTP: "TurboSMTP",
+            };
+
+            // Incident Management - On-call and alerting platforms
+            let incidentManagement = {
+                alerta: "Alerta",
+                AlertNow: "AlertNow",
+                Flowtriq: "Flowtriq",
+                GoAlert: "GoAlert",
+                GrafanaOncall: "Grafana Oncall",
+                HeiiOnCall: "Heii On-Call",
+                Keep: "Keep",
+                Opsgenie: "Opsgenie",
+                OpsiMate: "OpsiMate",
+                JiraServiceManagement: this.$t("Jira Service Management"),
+                PagerDuty: "PagerDuty",
+                PagerTree: "PagerTree",
+                SIGNL4: "SIGNL4",
+                Splunk: "Splunk",
+                squadcast: "SquadCast",
+            };
+
+            // Home Automation - Smart home and IoT platforms
+            let homeAutomation = {
+                HomeAssistant: "Home Assistant",
+                Indigo: "Indigo",
+            };
+
+            // Other Integrations
+            let other = {
+                GoogleSheets: "Google Sheets",
+            };
+
+            // Regional - Not supported in most regions or documentation is not in English
+            let regional = {
+                AliyunSMS: "AliyunSMS (阿里云短信服务)",
+                bearsms: "BearSMS (Israel)",
+                egosms: "EgoSMS (Uganda)",
+                DingDing: "DingDing (钉钉自定义机器人)",
+                Feishu: "Feishu (飞书)",
+                FlashDuty: "FlashDuty (快猫星云)",
+                FreeMobile: "FreeMobile (mobile.free.fr)",
+                Ooredoo: "Ooredoo (Maldives)",
+                PushDeer: "PushDeer",
+                promosms: "PromoSMS",
+                serwersms: "SerwerSMS.pl",
+                SMSManager: "SmsManager (smsmanager.cz)",
+                WeCom: "WeCom (企业微信群机器人)",
+                ServerChan: "ServerChan (Server酱)",
+                PushPlus: "PushPlus (推送加)",
+                SpugPush: "SpugPush（Spug推送助手）",
+                amootsms: "Amoot SMS",
+                smsc: "SMSC",
+                smsir: "SMS.IR",
+                WPush: "WPush(wpush.cn)",
+                WxPusher: "WxPusher SPT Push (WxPusher极简推送)",
+                YZJ: "YZJ (云之家自定义机器人)",
+                SMSPlanet: "SMSPlanet.pl",
+                VK: "VK",
+                VKTeams: "VKTeams",
+            };
+
+            // Sort by notification name alphabetically
             // https://stackoverflow.com/questions/1069666/sorting-object-property-by-values
             let sort = (list2) => {
                 return Object.entries(list2)
-                    .sort(([ , a ], [ , b ]) => a.localeCompare(b))
-                    .reduce((r, [ k, v ]) => ({
-                        ...r,
-                        [k]: v
-                    }), {});
+                    .sort(([, a], [, b]) => a.localeCompare(b))
+                    .reduce(
+                        (r, [k, v]) => ({
+                            ...r,
+                            [k]: v,
+                        }),
+                        {}
+                    );
             };
 
             return {
-                regularList: sort(regularList),
-                regionalList: sort(regionalList),
+                universal: sort(universal),
+                chatPlatforms: sort(chatPlatforms),
+                pushServices: sort(pushServices),
+                smsServices: sort(smsServices),
+                email: sort(email),
+                incidentManagement: sort(incidentManagement),
+                homeAutomation: sort(homeAutomation),
+                other: sort(other),
+                regional: sort(regional),
             };
         },
 
         notificationFullNameList() {
             let list = {};
-            for (let [ key, value ] of Object.entries(this.notificationNameList.regularList)) {
-                list[key] = value;
-            }
-            for (let [ key, value ] of Object.entries(this.notificationNameList.regionalList)) {
-                list[key] = value;
+            // Combine all categories into a single list
+            for (let category of Object.values(this.notificationNameList)) {
+                for (let [key, value] of Object.entries(category)) {
+                    list[key] = value;
+                }
             }
             return list;
         },
@@ -219,7 +405,7 @@ export default {
                 oldName = "";
             }
 
-            if (! this.notification.name || this.notification.name === oldName) {
+            if (!this.notification.name || this.notification.name === oldName) {
                 this.notification.name = this.getUniqueDefaultName(to);
             }
         },
@@ -227,8 +413,10 @@ export default {
     mounted() {
         this.modal = new Modal(this.$refs.modal);
     },
+    beforeUnmount() {
+        this.cleanupModal();
+    },
     methods: {
-
         /**
          * Show dialog to confirm deletion
          * @returns {void}
@@ -250,6 +438,10 @@ export default {
                 for (let n of this.$root.notificationList) {
                     if (n.id === notificationID) {
                         this.notification = JSON.parse(n.config);
+
+                        // applyExisting is one time only, but it got saved to database previously. Workaround fix, set it to false here to deal with the problem.
+                        this.notification.applyExisting = false;
+
                         break;
                     }
                 }
@@ -279,10 +471,9 @@ export default {
                     this.modal.hide();
 
                     // Emit added event, doesn't emit edit.
-                    if (! this.id) {
+                    if (!this.id) {
                         this.$emit("added", res.id);
                     }
-
                 }
             });
         },
@@ -321,17 +512,30 @@ export default {
          * @returns {string} Default name
          */
         getUniqueDefaultName(notificationKey) {
-
             let index = 1;
             let name = "";
             do {
                 name = this.$t("defaultNotificationName", {
                     notification: this.notificationFullNameList[notificationKey].replace(/\(.+\)/, "").trim(),
-                    number: index++
+                    number: index++,
                 });
-            } while (this.$root.notificationList.find(it => it.name === name));
+            } while (this.$root.notificationList.find((it) => it.name === name));
             return name;
-        }
+        },
+
+        /**
+         * Clean up modal and restore scroll behavior
+         * @returns {void}
+         */
+        cleanupModal() {
+            if (this.modal) {
+                try {
+                    this.modal.hide();
+                } catch (e) {
+                    console.warn("Modal hide failed:", e);
+                }
+            }
+        },
     },
 };
 </script>
@@ -340,7 +544,8 @@ export default {
 @import "../assets/vars.scss";
 
 .dark {
-    .modal-dialog .form-text, .modal-dialog p {
+    .modal-dialog .form-text,
+    .modal-dialog p {
         color: $dark-font-color;
     }
 }

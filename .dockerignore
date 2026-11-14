@@ -1,5 +1,6 @@
 /.idea
 /node_modules
+**/node_modules
 /data*
 /out
 /test
@@ -17,7 +18,6 @@ README.md
 .vscode
 .eslint*
 .stylelint*
-/.devcontainer
 /.github
 yarn.lock
 app.json
@@ -33,8 +33,23 @@ tsconfig.json
 /extra/healthcheck.exe
 /extra/healthcheck
 /extra/exe-builder
-/extra/push-examples
 /extra/uptime-kuma-push
+
+# Dev-only
+/AGENTS.md
+/CLAUDE.md
+/PLAN.md
+/.ws-context
+/compose.yaml
+/index.html
+/vite.config.mjs
+/playwright.config.js
+/.prettierrc.js
+/.prettierignore
+
+# Only src/util.ts is used by the server at runtime
+/src/*
+!/src/util.ts
 
 # Comment the following line if you want to rebuild the healthcheck binary
 /extra/healthcheck-armv7

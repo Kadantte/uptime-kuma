@@ -1,49 +1,69 @@
+import { markRaw } from "vue";
 import { io } from "socket.io-client";
 import { useToast } from "vue-toastification";
-import jwtDecode from "jwt-decode";
 import Favico from "favico.js";
 import dayjs from "dayjs";
 import mitt from "mitt";
 
 import { DOWN, MAINTENANCE, PENDING, UP } from "../util.ts";
-import { getDevContainerServerHostname, isDevContainer, getToastSuccessTimeout, getToastErrorTimeout } from "../util-frontend.js";
+import { getToastSuccessTimeout, getToastErrorTimeout } from "../util-frontend";
+import { BeatVersionThrottle } from "../beat-version-throttle";
+import { applyBeat, applyLatestBeats, beatStatusEntry } from "../beat-state";
+import { logout as betterAuthLogout } from "../auth-client";
 const toast = useToast();
 
 let socket;
+let disconnectTimeout;
 
 const noSocketIOPages = [
-    /^\/status-page$/,  //  /status-page
-    /^\/status/,    // /status**
-    /^\/$/      //  /
+    /^\/status-page$/, //  /status-page
+    /^\/status/, // /status**
+    /^\/$/, //  /
 ];
 
 const favicon = new Favico({
-    animation: "none"
+    animation: "none",
 });
 
 export default {
-
     data() {
         return {
-            info: { },
+            info: {},
             socket: {
-                token: null,
                 firstConnect: true,
                 connected: false,
                 connectCount: 0,
                 initedSocketIO: false,
             },
             username: null,
-            remember: (localStorage.remember !== "0"),
-            allowLoginDialog: false,        // Allowed to show login dialog, but "loggedIn" have to be true too. This exists because prevent the login dialog show 0.1s in first before the socket server auth-ed.
+            remember: localStorage.remember !== "0",
+            allowLoginDialog: false, // Allowed to show login dialog, but "loggedIn" have to be true too. This exists because prevent the login dialog show 0.1s in first before the socket server auth-ed.
             loggedIn: false,
-            monitorList: { },
+            loginRequired: false,
+            monitorList: {},
+            monitorTypeList: {},
             maintenanceList: {},
-            apiKeyList: {},
-            heartbeatList: { },
-            avgPingList: { },
-            uptimeList: { },
+            heartbeatList: {},
+            // Kept in sync incrementally by the heartbeat handlers. As computed values they
+            // were rebuilt over all monitors on every beat (thousands of monitors = hot loop)
+            lastHeartbeatList: {},
+            statusList: {},
+            // Non-reactive copy used by the dashboard counters, so a beat does not force
+            // an O(monitors) recount; the counters refresh at most once per second
+            lastBeatRaw: markRaw({}),
+            heartbeatVersion: 0,
+            heartbeatVersionThrottle: markRaw(
+                new BeatVersionThrottle(() => {
+                    this.heartbeatVersion++;
+                }, 1000)
+            ),
+            heartbeatHistoryRequested: new Set(),
+            monitorListLoaded: false,
+            dashboardLoadProgress: 0,
+            avgPingList: {},
+            uptimeList: {},
             tlsInfoList: {},
+            domainInfoList: {},
             notificationList: [],
             dockerHostList: [],
             remoteBrowserList: [],
@@ -70,6 +90,26 @@ export default {
     },
 
     methods: {
+        /**
+         * Store the newest beat of a monitor and its display status.
+         * Called per beat: must stay O(1), thousands of monitors beat every minute.
+         * @param {number} monitorID Monitor id
+         * @param {object} beat Heartbeat
+         * @returns {void}
+         */
+        updateLastBeat(monitorID, beat) {
+            applyBeat(this, monitorID, beat, this.statusEntryFor(beat));
+            this.heartbeatVersionThrottle.schedule();
+        },
+
+        /**
+         * Map a heartbeat status to its display text and color
+         * @param {object} beat Heartbeat
+         * @returns {{text: string, color: string}} Status entry
+         */
+        statusEntryFor(beat) {
+            return beatStatusEntry(this.$t.bind(this), beat);
+        },
 
         /**
          * Initialize connection to socket server
@@ -84,7 +124,7 @@ export default {
             }
 
             // No need to connect to the socket.io for status page
-            if (! bypass && location.pathname) {
+            if (!bypass && location.pathname) {
                 for (let page of noSocketIOPages) {
                     if (location.pathname.match(page)) {
                         return;
@@ -103,62 +143,81 @@ export default {
 
             let url;
             const env = process.env.NODE_ENV || "production";
-            if (env === "development" && isDevContainer()) {
-                url = protocol + getDevContainerServerHostname();
-            } else if (env === "development" || localStorage.dev === "dev") {
+            if (env === "development" || localStorage.dev === "dev") {
                 url = protocol + location.hostname + ":3001";
             } else {
                 // Connect to the current url
                 url = undefined;
             }
 
-            socket = io(url);
-
-            socket.on("info", (info) => {
-                this.info = info;
+            socket = io(url, {
+                withCredentials: true,
+                // Note for future: don't set transports to "websocket" first, due to origin issue
+                // Let it unset, it will connect via http first, then upgrade to websocket. This will avoid the origin issue.
             });
 
-            socket.on("setup", (monitorID, data) => {
+            socket.on("info", (info) => {
+                // Sent without `runtime` before login (hideVersion), so keep a safe default
+                this.info = { runtime: { platform: "" }, ...info };
+            });
+
+            socket.on("setup", () => {
                 this.$router.push("/setup");
             });
 
-            socket.on("autoLogin", (monitorID, data) => {
+            socket.on("session", (username) => {
                 this.loggedIn = true;
-                this.storage().token = "autoLogin";
-                this.socket.token = "autoLogin";
-                this.allowLoginDialog = false;
-            });
-
-            socket.on("loginRequired", () => {
-                let token = this.storage().token;
-                if (token && token !== "autoLogin") {
-                    this.loginByToken(token);
-                } else {
-                    this.$root.storage().removeItem("token");
-                    this.allowLoginDialog = true;
+                this.$root.loginRequired = false;
+                this.username = username;
+                if (!this.$root.dashboardLoadProgress) {
+                    this.$root.dashboardLoadProgress = 8;
                 }
             });
 
+            socket.on("loginRequired", () => {
+                this.allowLoginDialog = true;
+                this.$root.loginRequired = true;
+                this.$root.dashboardLoadProgress = 0;
+            });
+
             socket.on("monitorList", (data) => {
-                // Add Helper function
-                Object.entries(data).forEach(([ monitorID, monitor ]) => {
-                    monitor.getUrl = () => {
-                        try {
-                            return new URL(monitor.url);
-                        } catch (_) {
-                            return null;
-                        }
-                    };
-                });
+                this.assignMonitorUrlParser(data);
                 this.monitorList = data;
+                this.monitorListLoaded = true;
+
+                // Tell the server the list is painted, so it sends the heavier heartbeat and
+                // stats payloads only now (not before the first render). The loading bar is
+                // done at the same point: the list is what the user is waiting for.
+                this.$nextTick(() => {
+                    requestAnimationFrame(() => {
+                        this.$root.dashboardLoadProgress = 100;
+                        if (socket && !socket.dashboardRendered) {
+                            socket.dashboardRendered = true;
+                            socket.emit("dashboardRendered");
+                        }
+                    });
+                });
+            });
+
+            socket.on("updateMonitorIntoList", (data) => {
+                this.assignMonitorUrlParser(data);
+                Object.entries(data).forEach(([monitorID, updatedMonitor]) => {
+                    this.monitorList[monitorID] = updatedMonitor;
+                });
+            });
+
+            socket.on("deleteMonitorFromList", (monitorID) => {
+                if (this.monitorList[monitorID]) {
+                    delete this.monitorList[monitorID];
+                }
+            });
+
+            socket.on("monitorTypeList", (data) => {
+                this.monitorTypeList = data;
             });
 
             socket.on("maintenanceList", (data) => {
                 this.maintenanceList = data;
-            });
-
-            socket.on("apiKeyList", (data) => {
-                this.apiKeyList = data;
             });
 
             socket.on("notificationList", (data) => {
@@ -171,7 +230,7 @@ export default {
             });
 
             socket.on("proxyList", (data) => {
-                this.proxyList = data.map(item => {
+                this.proxyList = data.map((item) => {
                     item.auth = !!item.auth;
                     item.active = !!item.active;
                     item.default = !!item.default;
@@ -189,11 +248,20 @@ export default {
             });
 
             socket.on("heartbeat", (data) => {
-                if (! (data.monitorID in this.heartbeatList)) {
+                if (data.stats) {
+                    this.avgPingList[data.monitorID] = data.stats.avgPing;
+                    this.uptimeList[`${data.monitorID}_24`] = data.stats.uptime24;
+                    this.uptimeList[`${data.monitorID}_720`] = data.stats.uptime720;
+                    this.uptimeList[`${data.monitorID}_1y`] = data.stats.uptime1y;
+                    delete data.stats;
+                }
+
+                if (!(data.monitorID in this.heartbeatList)) {
                     this.heartbeatList[data.monitorID] = [];
                 }
 
                 this.heartbeatList[data.monitorID].push(data);
+                this.updateLastBeat(data.monitorID, data);
 
                 if (this.heartbeatList[data.monitorID].length >= 150) {
                     this.heartbeatList[data.monitorID].shift();
@@ -202,7 +270,6 @@ export default {
                 // Add to important list if it is important
                 // Also toast
                 if (data.important) {
-
                     if (this.monitorList[data.monitorID] !== undefined) {
                         if (data.status === 0) {
                             toast.error(`[${this.monitorList[data.monitorID].name}] [DOWN] ${data.msg}`, {
@@ -222,15 +289,37 @@ export default {
             });
 
             socket.on("heartbeatList", (monitorID, data, overwrite = false) => {
-                if (! (monitorID in this.heartbeatList) || overwrite) {
+                if (!(monitorID in this.heartbeatList) || overwrite) {
                     this.heartbeatList[monitorID] = data;
                 } else {
                     this.heartbeatList[monitorID] = data.concat(this.heartbeatList[monitorID]);
+                }
+                if (data.length > 0) {
+                    this.updateLastBeat(monitorID, data[data.length - 1]);
+                }
+            });
+
+            socket.on("heartbeatLists", (data) => {
+                for (const monitorID in data) {
+                    const beats = data[monitorID];
+                    applyLatestBeats(this.heartbeatList, monitorID, beats);
+                    if (beats.length > 0) {
+                        this.updateLastBeat(monitorID, beats[beats.length - 1]);
+                    }
                 }
             });
 
             socket.on("avgPing", (monitorID, data) => {
                 this.avgPingList[monitorID] = data;
+            });
+
+            socket.on("stats", (data) => {
+                for (const [monitorID, stats] of Object.entries(data)) {
+                    this.avgPingList[monitorID] = stats.avgPing;
+                    this.uptimeList[`${monitorID}_24`] = stats.uptime24;
+                    this.uptimeList[`${monitorID}_720`] = stats.uptime720;
+                    this.uptimeList[`${monitorID}_1y`] = stats.uptime1y;
+                }
             });
 
             socket.on("uptime", (monitorID, type, data) => {
@@ -239,6 +328,10 @@ export default {
 
             socket.on("certInfo", (monitorID, data) => {
                 this.tlsInfoList[monitorID] = JSON.parse(data);
+            });
+
+            socket.on("domainInfo", (monitorID, daysRemaining, expiresOn) => {
+                this.domainInfoList[monitorID] = { daysRemaining: daysRemaining, expiresOn: expiresOn };
             });
 
             socket.on("connect_error", (err) => {
@@ -251,15 +344,25 @@ export default {
 
             socket.on("disconnect", () => {
                 console.log("disconnect");
-                this.connectionErrorMsg = "Lost connection to the socket server. Reconnecting...";
-                this.socket.connected = false;
+                // As we are using cookie based auth, we have to reconnect the socket
+                // avoid noise by add a delay
+                disconnectTimeout = setTimeout(() => {
+                    this.connectionErrorMsg = `${this.$t("Lost connection to the socket server.")} ${this.$t("Reconnecting...")}`;
+                    this.socket.connected = false;
+                    this.$root.dashboardLoadProgress = 0;
+                }, 2000);
             });
 
             socket.on("connect", () => {
                 console.log("Connected to the socket server");
+
+                clearTimeout(disconnectTimeout);
+
                 this.socket.connectCount++;
                 this.socket.connected = true;
                 this.showReverseProxyGuide = false;
+                // A new connection gets its own monitor list; allow the next one to signal paint
+                socket.dashboardRendered = false;
 
                 // Reset Heartbeat list if it is re-connect
                 if (this.socket.connectCount >= 2) {
@@ -270,11 +373,11 @@ export default {
             });
 
             // cloudflared
-            socket.on("cloudflared_installed", (res) => this.cloudflared.installed = res);
-            socket.on("cloudflared_running", (res) => this.cloudflared.running = res);
-            socket.on("cloudflared_message", (res) => this.cloudflared.message = res);
-            socket.on("cloudflared_errorMessage", (res) => this.cloudflared.errorMessage = res);
-            socket.on("cloudflared_token", (res) => this.cloudflared.cloudflareTunnelToken = res);
+            socket.on("cloudflared_installed", (res) => (this.cloudflared.installed = res));
+            socket.on("cloudflared_running", (res) => (this.cloudflared.running = res));
+            socket.on("cloudflared_message", (res) => (this.cloudflared.message = res));
+            socket.on("cloudflared_errorMessage", (res) => (this.cloudflared.errorMessage = res));
+            socket.on("cloudflared_token", (res) => (this.cloudflared.cloudflareTunnelToken = res));
 
             socket.on("initServerTimezone", () => {
                 socket.emit("initServerTimezone", dayjs.tz.guess());
@@ -284,26 +387,30 @@ export default {
                 location.reload();
             });
         },
+        /**
+         * parse all urls from list.
+         * @param {object} data Monitor data to modify
+         * @returns {object} list
+         */
+        assignMonitorUrlParser(data) {
+            Object.entries(data).forEach(([monitorID, monitor]) => {
+                monitor.getUrl = () => {
+                    try {
+                        return new URL(monitor.url);
+                    } catch (_) {
+                        return null;
+                    }
+                };
+            });
+            return data;
+        },
 
         /**
          * The storage currently in use
          * @returns {Storage} Current storage
          */
         storage() {
-            return (this.remember) ? localStorage : sessionStorage;
-        },
-
-        /**
-         * Get payload of JWT cookie
-         * @returns {(object | undefined)} JWT payload
-         */
-        getJWTPayload() {
-            const jwtToken = this.$root.storage().token;
-
-            if (jwtToken && jwtToken !== "autoLogin") {
-                return jwtDecode(jwtToken);
-            }
-            return undefined;
+            return this.remember ? localStorage : sessionStorage;
         },
 
         /**
@@ -315,24 +422,32 @@ export default {
         },
 
         /**
+         * Apply translation to a message if possible
+         * @param {string | {key: string, values: object}} msg Message to translate
+         * @returns {string} Translated message
+         */
+        applyTranslation(msg) {
+            if (msg != null && typeof msg === "object") {
+                return this.$t(msg.key, msg.values);
+            } else {
+                return this.$t(msg);
+            }
+        },
+
+        /**
          * Show success or error toast dependent on response status code
-         * @param {object} res Response object
+         * @param {{ok:boolean, msg: string, msgi18n: false} | {ok:boolean, msg: string|{key: string, values: object}, msgi18n: true}} res Response object
          * @returns {void}
          */
         toastRes(res) {
-            let msg = res.msg;
             if (res.msgi18n) {
-                if (msg != null && typeof msg === "object") {
-                    msg = this.$t(msg.key, msg.values);
-                } else {
-                    msg = this.$t(msg);
-                }
+                res.msg = this.applyTranslation(res.msg);
             }
 
             if (res.ok) {
-                toast.success(msg);
+                toast.success(res.msg);
             } else {
-                toast.error(msg);
+                toast.error(res.msg);
             }
         },
 
@@ -355,124 +470,18 @@ export default {
         },
 
         /**
-         * Callback for login
-         * @callback loginCB
-         * @param {object} res Response object
-         */
-
-        /**
-         * Send request to log user in
-         * @param {string} username Username to log in with
-         * @param {string} password Password to log in with
-         * @param {string} token User token
-         * @param {loginCB} callback Callback to call with result
-         * @returns {void}
-         */
-        login(username, password, token, callback) {
-            socket.emit("login", {
-                username,
-                password,
-                token,
-            }, (res) => {
-                if (res.tokenRequired) {
-                    callback(res);
-                }
-
-                if (res.ok) {
-                    this.storage().token = res.token;
-                    this.socket.token = res.token;
-                    this.loggedIn = true;
-                    this.username = this.getJWTPayload()?.username;
-
-                    // Trigger Chrome Save Password
-                    history.pushState({}, "");
-                }
-
-                callback(res);
-            });
-        },
-
-        /**
-         * Log in using a token
-         * @param {string} token Token to log in with
-         * @returns {void}
-         */
-        loginByToken(token) {
-            socket.emit("loginByToken", token, (res) => {
-                this.allowLoginDialog = true;
-
-                if (! res.ok) {
-                    this.logout();
-                } else {
-                    this.loggedIn = true;
-                    this.username = this.getJWTPayload()?.username;
-                }
-            });
-        },
-
-        /**
          * Log out of the web application
          * @returns {void}
          */
-        logout() {
-            socket.emit("logout", () => { });
-            this.storage().removeItem("token");
-            this.socket.token = null;
-            this.loggedIn = false;
-            this.username = null;
-            this.clearData();
-        },
-
-        /**
-         * Callback for general socket requests
-         * @callback socketCB
-         * @param {object} res Result of operation
-         */
-        /**
-         * Prepare 2FA configuration
-         * @param {socketCB} callback Callback for socket response
-         * @returns {void}
-         */
-        prepare2FA(callback) {
-            socket.emit("prepare2FA", callback);
-        },
-
-        /**
-         * Save the current 2FA configuration
-         * @param {any} secret Unused
-         * @param {socketCB} callback Callback for socket response
-         * @returns {void}
-         */
-        save2FA(secret, callback) {
-            socket.emit("save2FA", callback);
-        },
-
-        /**
-         * Disable 2FA for this user
-         * @param {socketCB} callback Callback for socket response
-         * @returns {void}
-         */
-        disable2FA(callback) {
-            socket.emit("disable2FA", callback);
-        },
-
-        /**
-         * Verify the provided 2FA token
-         * @param {string} token Token to verify
-         * @param {socketCB} callback Callback for socket response
-         * @returns {void}
-         */
-        verifyToken(token, callback) {
-            socket.emit("verifyToken", token, callback);
-        },
-
-        /**
-         * Get current 2FA status
-         * @param {socketCB} callback Callback for socket response
-         * @returns {void}
-         */
-        twoFAStatus(callback) {
-            socket.emit("twoFAStatus", callback);
+        async logout() {
+            await betterAuthLogout(() => {
+                console.log("Logged out");
+                this.loggedIn = false;
+                this.username = null;
+                this.allowLoginDialog = false;
+                this.clearData();
+                reconnectSocket();
+            });
         },
 
         /**
@@ -481,8 +490,8 @@ export default {
          * @returns {void}
          */
         getMonitorList(callback) {
-            if (! callback) {
-                callback = () => { };
+            if (!callback) {
+                callback = () => {};
             }
             socket.emit("getMonitorList", callback);
         },
@@ -493,20 +502,20 @@ export default {
          * @returns {void}
          */
         getMaintenanceList(callback) {
-            if (! callback) {
-                callback = () => { };
+            if (!callback) {
+                callback = () => {};
             }
             socket.emit("getMaintenanceList", callback);
         },
 
         /**
-         * Send list of API keys
+         * Send list of API keys (callback receives Better Auth keys and legacy keys)
          * @param {socketCB} callback Callback for socket response
          * @returns {void}
          */
         getAPIKeyList(callback) {
             if (!callback) {
-                callback = () => { };
+                callback = () => {};
             }
             socket.emit("getAPIKeyList", callback);
         },
@@ -576,11 +585,12 @@ export default {
         /**
          * Delete monitor by ID
          * @param {number} monitorID ID of monitor to delete
+         * @param {boolean} deleteChildren Whether to delete child monitors (for groups)
          * @param {socketCB} callback Callback for socket response
          * @returns {void}
          */
-        deleteMonitor(monitorID, callback) {
-            socket.emit("deleteMonitor", monitorID, callback);
+        deleteMonitor(monitorID, deleteChildren, callback) {
+            socket.emit("deleteMonitor", monitorID, deleteChildren, callback);
         },
 
         /**
@@ -614,12 +624,20 @@ export default {
         },
 
         /**
-         * Clear the hearbeat list
+         * Clear the heartbeat list
          * @returns {void}
          */
         clearData() {
             console.log("reset heartbeat list");
             this.heartbeatList = {};
+            this.lastHeartbeatList = {};
+            this.statusList = {};
+            this.lastBeatRaw = markRaw({});
+            this.heartbeatVersion = 0;
+            this.heartbeatVersionThrottle.cancel();
+            this.heartbeatHistoryRequested = new Set();
+            this.monitorListLoaded = false;
+            this.$root.dashboardLoadProgress = 0;
         },
 
         /**
@@ -683,69 +701,16 @@ export default {
          */
         getMonitorChartData(monitorID, period, callback) {
             socket.emit("getMonitorChartData", monitorID, period, callback);
-        }
+        },
     },
 
     computed: {
-
         usernameFirstChar() {
             if (typeof this.username == "string" && this.username.length >= 1) {
                 return this.username.charAt(0).toUpperCase();
             } else {
                 return "🐻";
             }
-        },
-
-        lastHeartbeatList() {
-            let result = {};
-
-            for (let monitorID in this.heartbeatList) {
-                let index = this.heartbeatList[monitorID].length - 1;
-                result[monitorID] = this.heartbeatList[monitorID][index];
-            }
-
-            return result;
-        },
-
-        statusList() {
-            let result = {};
-
-            let unknown = {
-                text: this.$t("Unknown"),
-                color: "secondary",
-            };
-
-            for (let monitorID in this.lastHeartbeatList) {
-                let lastHeartBeat = this.lastHeartbeatList[monitorID];
-
-                if (! lastHeartBeat) {
-                    result[monitorID] = unknown;
-                } else if (lastHeartBeat.status === UP) {
-                    result[monitorID] = {
-                        text: this.$t("Up"),
-                        color: "primary",
-                    };
-                } else if (lastHeartBeat.status === DOWN) {
-                    result[monitorID] = {
-                        text: this.$t("Down"),
-                        color: "danger",
-                    };
-                } else if (lastHeartBeat.status === PENDING) {
-                    result[monitorID] = {
-                        text: this.$t("Pending"),
-                        color: "warning",
-                    };
-                } else if (lastHeartBeat.status === MAINTENANCE) {
-                    result[monitorID] = {
-                        text: this.$t("statusMaintenance"),
-                        color: "maintenance",
-                    };
-                } else {
-                    result[monitorID] = unknown;
-                }
-            }
-
-            return result;
         },
 
         stats() {
@@ -759,11 +724,14 @@ export default {
                 pause: 0,
             };
 
+            // Recompute at most once per second, not on every heartbeat
+            this.heartbeatVersion;
+            const raw = this.lastBeatRaw;
             for (let monitorID in this.$root.monitorList) {
-                let beat = this.$root.lastHeartbeatList[monitorID];
+                let beat = raw[monitorID];
                 let monitor = this.$root.monitorList[monitorID];
 
-                if (monitor && ! monitor.active) {
+                if (monitor && !monitor.active) {
                     result.pause++;
                 } else if (beat) {
                     result.active++;
@@ -806,11 +774,10 @@ export default {
                 return true;
             }
             return this.info.version === this.frontendVersion;
-        }
+        },
     },
 
     watch: {
-
         // Update Badge
         "stats.down"(to, from) {
             if (to !== from) {
@@ -825,18 +792,23 @@ export default {
 
         // Reload the SPA if the server version is changed.
         "info.version"(to, from) {
+            // No need to refresh, when the version is not obtained, which means it is not logged in.
+            if (!to) {
+                return;
+            }
+
             if (from && from !== to) {
+                console.log(`Server version changed from ${from} to ${to}, reloading the page`);
                 window.location.reload();
             }
         },
 
         remember() {
-            localStorage.remember = (this.remember) ? "1" : "0";
+            localStorage.remember = this.remember ? "1" : "0";
         },
 
         // Reconnect the socket io, if status-page to dashboard
         "$route.fullPath"(newValue, oldValue) {
-
             if (newValue) {
                 for (let page of noSocketIOPages) {
                     if (newValue.match(page)) {
@@ -847,7 +819,16 @@ export default {
 
             this.initSocketIO();
         },
-
     },
-
 };
+
+/**
+ * Reconnect the socket.io connection.
+ * Usage: Reconnect socket.io with auth-ed cookie, or drop the auth-ed session.
+ */
+export function reconnectSocket() {
+    if (socket) {
+        socket.disconnect();
+        socket.connect();
+    }
+}

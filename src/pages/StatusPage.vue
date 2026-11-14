@@ -1,42 +1,55 @@
 <template>
     <div v-if="loadedTheme" class="container mt-3">
         <!-- Sidebar for edit mode -->
-        <div v-if="enableEditMode" class="sidebar">
+        <div v-if="enableEditMode" class="sidebar" data-testid="edit-sidebar" :data-status-page-id="config.id">
             <div class="sidebar-body">
                 <div class="my-3">
                     <label for="slug" class="form-label">{{ $t("Slug") }}</label>
                     <div class="input-group">
                         <span id="basic-addon3" class="input-group-text">/status/</span>
-                        <input id="slug" v-model="config.slug" type="text" class="form-control">
+                        <input id="slug" v-model="config.slug" type="text" class="form-control" />
                     </div>
                 </div>
 
                 <div class="my-3">
                     <label for="title" class="form-label">{{ $t("Title") }}</label>
-                    <input id="title" v-model="config.title" type="text" class="form-control">
+                    <input id="title" v-model="config.title" type="text" class="form-control" />
                 </div>
 
                 <!-- Description -->
                 <div class="my-3">
                     <label for="description" class="form-label">{{ $t("Description") }}</label>
-                    <textarea id="description" v-model="config.description" class="form-control"></textarea>
-                    <div class="form-text">
-                        {{ $t("markdownSupported") }}
-                    </div>
+                    <textarea
+                        id="description"
+                        v-model="config.description"
+                        class="form-control"
+                        data-testid="description-input"
+                    ></textarea>
+                    <div class="form-text">{{ $t("markdownSupported") }}</div>
                 </div>
 
                 <!-- Footer Text -->
                 <div class="my-3">
                     <label for="footer-text" class="form-label">{{ $t("Footer Text") }}</label>
-                    <textarea id="footer-text" v-model="config.footerText" class="form-control"></textarea>
-                    <div class="form-text">
-                        {{ $t("markdownSupported") }}
-                    </div>
+                    <textarea
+                        id="footer-text"
+                        v-model="config.footerText"
+                        class="form-control"
+                        data-testid="footer-text-input"
+                    ></textarea>
+                    <div class="form-text">{{ $t("markdownSupported") }}</div>
                 </div>
 
                 <div class="my-3">
                     <label for="auto-refresh-interval" class="form-label">{{ $t("Refresh Interval") }}</label>
-                    <input id="auto-refresh-interval" v-model="config.autoRefreshInterval" type="number" class="form-control" :min="5">
+                    <input
+                        id="auto-refresh-interval"
+                        v-model="config.autoRefreshInterval"
+                        type="number"
+                        class="form-control"
+                        :min="5"
+                        data-testid="refresh-interval-input"
+                    />
                     <div class="form-text">
                         {{ $t("Refresh Interval Description", [config.autoRefreshInterval]) }}
                     </div>
@@ -44,7 +57,7 @@
 
                 <div class="my-3">
                     <label for="switch-theme" class="form-label">{{ $t("Theme") }}</label>
-                    <select id="switch-theme" v-model="config.theme" class="form-select">
+                    <select id="switch-theme" v-model="config.theme" class="form-select" data-testid="theme-select">
                         <option value="auto">{{ $t("Auto") }}</option>
                         <option value="light">{{ $t("Light") }}</option>
                         <option value="dark">{{ $t("Dark") }}</option>
@@ -52,56 +65,153 @@
                 </div>
 
                 <div class="my-3 form-check form-switch">
-                    <input id="showTags" v-model="config.showTags" class="form-check-input" type="checkbox">
+                    <input
+                        id="showTags"
+                        v-model="config.showTags"
+                        class="form-check-input"
+                        type="checkbox"
+                        data-testid="show-tags-checkbox"
+                    />
                     <label class="form-check-label" for="showTags">{{ $t("Show Tags") }}</label>
                 </div>
 
                 <!-- Show Powered By -->
                 <div class="my-3 form-check form-switch">
-                    <input id="show-powered-by" v-model="config.showPoweredBy" class="form-check-input" type="checkbox">
+                    <input
+                        id="show-powered-by"
+                        v-model="config.showPoweredBy"
+                        class="form-check-input"
+                        type="checkbox"
+                        data-testid="show-powered-by-checkbox"
+                    />
                     <label class="form-check-label" for="show-powered-by">{{ $t("Show Powered By") }}</label>
                 </div>
 
                 <!-- Show certificate expiry -->
                 <div class="my-3 form-check form-switch">
-                    <input id="show-certificate-expiry" v-model="config.showCertificateExpiry" class="form-check-input" type="checkbox">
-                    <label class="form-check-label" for="show-certificate-expiry">{{ $t("showCertificateExpiry") }}</label>
+                    <input
+                        id="show-certificate-expiry"
+                        v-model="config.showCertificateExpiry"
+                        class="form-check-input"
+                        type="checkbox"
+                        data-testid="show-certificate-expiry-checkbox"
+                    />
+                    <label class="form-check-label" for="show-certificate-expiry">
+                        {{ $t("showCertificateExpiry") }}
+                    </label>
                 </div>
 
-                <div v-if="false" class="my-3">
-                    <label for="password" class="form-label">{{ $t("Password") }} <sup>{{ $t("Coming Soon") }}</sup></label>
-                    <input id="password" v-model="config.password" disabled type="password" autocomplete="new-password" class="form-control">
+                <!-- Show only last heartbeat -->
+                <div class="my-3 form-check form-switch">
+                    <input
+                        id="show-only-last-heartbeat"
+                        v-model="config.showOnlyLastHeartbeat"
+                        class="form-check-input"
+                        type="checkbox"
+                    />
+                    <label class="form-check-label" for="show-only-last-heartbeat">
+                        {{ $t("showOnlyLastHeartbeat") }}
+                    </label>
                 </div>
 
                 <!-- Domain Name List -->
                 <div class="my-3">
                     <label class="form-label">
                         {{ $t("Domain Names") }}
-                        <button class="p-0 bg-transparent border-0" :aria-label="$t('Add a domain')" @click="addDomainField">
+                        <button
+                            class="p-0 bg-transparent border-0"
+                            :aria-label="$t('Add a domain')"
+                            @click="addDomainField"
+                        >
                             <font-awesome-icon icon="plus-circle" class="action text-primary" />
                         </button>
                     </label>
 
                     <ul class="list-group domain-name-list">
                         <li v-for="(domain, index) in config.domainNameList" :key="index" class="list-group-item">
-                            <input v-model="config.domainNameList[index]" type="text" class="no-bg domain-input" placeholder="example.com" />
-                            <button class="p-0 bg-transparent border-0" :aria-label="$t('Remove domain', [ domain ])" @click="removeDomain(index)">
+                            <input
+                                v-model="config.domainNameList[index]"
+                                type="text"
+                                class="no-bg domain-input"
+                                placeholder="example.com"
+                            />
+                            <button
+                                class="p-0 bg-transparent border-0"
+                                :aria-label="$t('Remove domain', [domain])"
+                                @click="removeDomain(index)"
+                            >
                                 <font-awesome-icon icon="times" class="action remove ms-2 me-3 text-danger" />
                             </button>
                         </li>
                     </ul>
                 </div>
 
-                <!-- Google Analytics -->
+                <!-- Analytics -->
+
                 <div class="my-3">
-                    <label for="googleAnalyticsTag" class="form-label">{{ $t("Google Analytics ID") }}</label>
-                    <input id="googleAnalyticsTag" v-model="config.googleAnalyticsId" type="text" class="form-control">
+                    <label for="analyticsType" class="form-label">{{ $t("Analytics Type") }}</label>
+                    <select
+                        id="analyticsType"
+                        v-model="config.analyticsType"
+                        class="form-select"
+                        data-testid="analytics-type-select"
+                    >
+                        <option :value="null">{{ $t("None") }}</option>
+                        <option value="google">Google</option>
+                        <option value="umami">Umami</option>
+                        <option value="plausible">Plausible</option>
+                        <option value="matomo">Matomo</option>
+                        <option value="rybbit">Rybbit</option>
+                    </select>
+                </div>
+
+                <div v-if="!!config.analyticsType" class="my-3">
+                    <label for="analyticsId" class="form-label">{{ $t("Analytics ID") }}</label>
+                    <input
+                        id="analyticsId"
+                        v-model="config.analyticsId"
+                        type="text"
+                        class="form-control"
+                        data-testid="analytics-id-input"
+                    />
+                </div>
+
+                <div v-if="!!config.analyticsType && config.analyticsType !== 'google'" class="my-3">
+                    <label for="analyticsScriptUrl" class="form-label">{{ $t("Analytics Script URL") }}</label>
+                    <input
+                        id="analyticsScriptUrl"
+                        v-model="config.analyticsScriptUrl"
+                        type="url"
+                        class="form-control"
+                        data-testid="analytics-script-url-input"
+                    />
+                </div>
+
+                <!-- RSS Title -->
+                <div class="my-3">
+                    <label for="rss-title" class="form-label">{{ $t("RSS Title") }}</label>
+                    <input
+                        id="rss-title"
+                        v-model="config.rssTitle"
+                        type="text"
+                        class="form-control"
+                        data-testid="rss-title-input"
+                    />
+                    <div class="form-text">
+                        {{ $t("Leave blank to use status page title") }}
+                    </div>
                 </div>
 
                 <!-- Custom CSS -->
                 <div class="my-3">
                     <div class="mb-1">{{ $t("Custom CSS") }}</div>
-                    <prism-editor v-model="config.customCSS" class="css-editor" :highlight="highlighter" line-numbers></prism-editor>
+                    <prism-editor
+                        v-model="config.customCSS"
+                        class="css-editor"
+                        data-testid="custom-css-input"
+                        :highlight="highlighter"
+                        line-numbers
+                    ></prism-editor>
                 </div>
 
                 <div class="danger-zone">
@@ -114,7 +224,7 @@
 
             <!-- Sidebar Footer -->
             <div class="sidebar-footer">
-                <button class="btn btn-success me-2" :disabled="loading" @click="save">
+                <button class="btn btn-success me-2" :disabled="loading" data-testid="save-button" @click="save">
                     <font-awesome-icon icon="save" />
                     {{ $t("Save") }}
                 </button>
@@ -127,11 +237,19 @@
         </div>
 
         <!-- Main Status Page -->
-        <div :class="{ edit: enableEditMode}" class="main">
+        <div :class="{ edit: enableEditMode }" class="main">
             <!-- Logo & Title -->
             <h1 class="mb-4 title-flex">
                 <!-- Logo -->
                 <span class="logo-wrapper" @click="showImageCropUploadMethod">
+                    <button
+                        v-if="editMode"
+                        type="button"
+                        class="p-0 bg-transparent border-0 small-reset-btn reset-top-left"
+                        @click.stop="resetToDefaultImage"
+                    >
+                        <font-awesome-icon icon="times" class="text-danger" />
+                    </button>
                     <img :src="logoURL" alt class="logo me-2" :class="logoClass" />
                     <font-awesome-icon v-if="enableEditMode" class="icon-upload" icon="upload" />
                 </span>
@@ -155,87 +273,111 @@
             </h1>
 
             <!-- Admin functions -->
-            <div v-if="hasToken" class="mb-4">
+            <div v-if="authenticated" class="mb-2">
                 <div v-if="!enableEditMode">
-                    <button class="btn btn-info me-2" @click="edit">
+                    <button class="btn btn-primary mb-2 me-2" data-testid="edit-button" @click="edit">
                         <font-awesome-icon icon="edit" />
                         {{ $t("Edit Status Page") }}
                     </button>
 
-                    <a href="/manage-status-page" class="btn btn-info">
+                    <a href="/manage-status-page" class="btn btn-primary mb-2">
                         <font-awesome-icon icon="tachometer-alt" />
                         {{ $t("Go to Dashboard") }}
                     </a>
                 </div>
 
                 <div v-else>
-                    <button class="btn btn-primary btn-add-group me-2" @click="createIncident">
+                    <button
+                        class="btn btn-primary btn-add-group me-2"
+                        data-testid="create-incident-button"
+                        @click="createIncident"
+                    >
                         <font-awesome-icon icon="bullhorn" />
                         {{ $t("Create Incident") }}
                     </button>
                 </div>
             </div>
 
-            <!-- Incident -->
-            <div v-if="incident !== null" class="shadow-box alert mb-4 p-4 incident" role="alert" :class="incidentClass">
-                <strong v-if="editIncidentMode">{{ $t("Title") }}:</strong>
-                <Editable v-model="incident.title" tag="h4" :contenteditable="editIncidentMode" :noNL="true" class="alert-heading" />
+            <!-- Incident Edit Form -->
+            <IncidentEditForm
+                v-if="
+                    editIncidentMode &&
+                    incident !== null &&
+                    (!incident.id || !activeIncidents.some((i) => i.id === incident.id))
+                "
+                v-model="incident"
+                @post="postIncident"
+                @cancel="cancelIncident"
+            />
 
-                <strong v-if="editIncidentMode">{{ $t("Content") }}:</strong>
-                <Editable v-if="editIncidentMode" v-model="incident.content" tag="div" :contenteditable="editIncidentMode" class="content" />
-                <div v-if="editIncidentMode" class="form-text">
-                    {{ $t("markdownSupported") }}
-                </div>
-                <!-- eslint-disable-next-line vue/no-v-html-->
-                <div v-if="! editIncidentMode" class="content" v-html="incidentHTML"></div>
+            <!-- Active Pinned Incidents -->
+            <template v-for="activeIncident in activeIncidents" :key="activeIncident.id">
+                <!-- Edit mode for this specific incident -->
+                <IncidentEditForm
+                    v-if="editIncidentMode && incident !== null && incident.id === activeIncident.id"
+                    v-model="incident"
+                    @post="postIncident"
+                    @cancel="cancelIncident"
+                />
 
-                <!-- Incident Date -->
-                <div class="date mt-3">
-                    {{ $t("Date Created") }}: {{ $root.datetime(incident.createdDate) }} ({{ dateFromNow(incident.createdDate) }})<br />
-                    <span v-if="incident.lastUpdatedDate">
-                        {{ $t("Last Updated") }}: {{ $root.datetime(incident.lastUpdatedDate) }} ({{ dateFromNow(incident.lastUpdatedDate) }})
-                    </span>
-                </div>
+                <!-- Display mode for this incident -->
+                <div
+                    v-else
+                    class="shadow-box alert mb-4 p-4 incident"
+                    role="alert"
+                    :class="'bg-' + activeIncident.style"
+                    data-testid="incident"
+                >
+                    <h4 class="alert-heading" data-testid="incident-title">{{ activeIncident.title }}</h4>
+                    <!-- eslint-disable vue/no-v-html -->
+                    <div
+                        class="content"
+                        data-testid="incident-content"
+                        v-html="getIncidentHTML(activeIncident.content)"
+                    ></div>
+                    <!-- eslint-enable vue/no-v-html -->
 
-                <div v-if="editMode" class="mt-3">
-                    <button v-if="editIncidentMode" class="btn btn-light me-2" @click="postIncident">
-                        <font-awesome-icon icon="bullhorn" />
-                        {{ $t("Post") }}
-                    </button>
-
-                    <button v-if="!editIncidentMode && incident.id" class="btn btn-light me-2" @click="editIncident">
-                        <font-awesome-icon icon="edit" />
-                        {{ $t("Edit") }}
-                    </button>
-
-                    <button v-if="editIncidentMode" class="btn btn-light me-2" @click="cancelIncident">
-                        <font-awesome-icon icon="times" />
-                        {{ $t("Cancel") }}
-                    </button>
-
-                    <div v-if="editIncidentMode" class="dropdown d-inline-block me-2">
-                        <button id="dropdownMenuButton1" class="btn btn-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                            {{ $t("Style") }}: {{ $t(incident.style) }}
-                        </button>
-                        <ul class="dropdown-menu" aria-labelledby="dropdownMenuButton1">
-                            <li><a class="dropdown-item" href="#" @click="incident.style = 'info'">{{ $t("info") }}</a></li>
-                            <li><a class="dropdown-item" href="#" @click="incident.style = 'warning'">{{ $t("warning") }}</a></li>
-                            <li><a class="dropdown-item" href="#" @click="incident.style = 'danger'">{{ $t("danger") }}</a></li>
-                            <li><a class="dropdown-item" href="#" @click="incident.style = 'primary'">{{ $t("primary") }}</a></li>
-                            <li><a class="dropdown-item" href="#" @click="incident.style = 'light'">{{ $t("light") }}</a></li>
-                            <li><a class="dropdown-item" href="#" @click="incident.style = 'dark'">{{ $t("dark") }}</a></li>
-                        </ul>
+                    <!-- Incident Date -->
+                    <div class="date mt-3">
+                        {{
+                            $t("dateCreatedAtFromNow", {
+                                date: $root.datetime(activeIncident.createdDate),
+                                fromNow: dateFromNow(activeIncident.createdDate),
+                            })
+                        }}
+                        <br />
+                        <span v-if="activeIncident.lastUpdatedDate">
+                            {{
+                                $t("lastUpdatedAtFromNow", {
+                                    date: $root.datetime(activeIncident.lastUpdatedDate),
+                                    fromNow: dateFromNow(activeIncident.lastUpdatedDate),
+                                })
+                            }}
+                        </span>
                     </div>
 
-                    <button v-if="!editIncidentMode && incident.id" class="btn btn-light me-2" @click="unpinIncident">
-                        <font-awesome-icon icon="unlink" />
-                        {{ $t("Delete") }}
-                    </button>
+                    <div v-if="editMode" class="mt-3">
+                        <button class="btn btn-light me-2" @click="resolveIncident(activeIncident)">
+                            <font-awesome-icon icon="check" />
+                            {{ $t("Resolve") }}
+                        </button>
+                        <button class="btn btn-light me-2" @click="editIncident(activeIncident)">
+                            <font-awesome-icon icon="edit" />
+                            {{ $t("Edit") }}
+                        </button>
+                        <button
+                            class="btn btn-light me-2"
+                            @click="$refs.incidentManageModal.showDelete(activeIncident)"
+                        >
+                            <font-awesome-icon icon="unlink" />
+                            {{ $t("Delete") }}
+                        </button>
+                    </div>
                 </div>
-            </div>
+            </template>
 
             <!-- Overall Status -->
-            <div class="shadow-box list  p-4 overall-status mb-4">
+            <div class="shadow-box list p-4 overall-status mb-4">
                 <div v-if="Object.keys($root.publicMonitorList).length === 0 && loadedData">
                     <font-awesome-icon icon="question-circle" class="ok" />
                     {{ $t("No Services") }}
@@ -263,7 +405,7 @@
                     </div>
 
                     <div v-else>
-                        <font-awesome-icon icon="question-circle" style="color: #efefef;" />
+                        <font-awesome-icon icon="question-circle" style="color: #efefef" />
                     </div>
                 </template>
             </div>
@@ -271,8 +413,10 @@
             <!-- Maintenance -->
             <template v-if="maintenanceList.length > 0">
                 <div
-                    v-for="maintenance in maintenanceList" :key="maintenance.id"
-                    class="shadow-box alert mb-4 p-3 bg-maintenance mt-4 position-relative" role="alert"
+                    v-for="maintenance in maintenanceList"
+                    :key="maintenance.id"
+                    class="shadow-box alert mb-4 p-3 bg-maintenance mt-4 position-relative"
+                    role="alert"
                 >
                     <h4 class="alert-heading">{{ maintenance.title }}</h4>
                     <!-- eslint-disable-next-line vue/no-v-html-->
@@ -283,13 +427,26 @@
 
             <!-- Description -->
             <strong v-if="editMode">{{ $t("Description") }}:</strong>
-            <Editable v-if="enableEditMode" v-model="config.description" :contenteditable="editMode" tag="div" class="mb-4 description" />
-            <!-- eslint-disable-next-line vue/no-v-html-->
-            <div v-if="! enableEditMode" class="alert-heading p-2" v-html="descriptionHTML"></div>
+            <Editable
+                v-if="enableEditMode"
+                v-model="config.description"
+                :contenteditable="editMode"
+                tag="div"
+                class="mb-4 description"
+                data-testid="description-editable"
+            />
+            <!-- eslint-disable vue/no-v-html-->
+            <div
+                v-if="!enableEditMode"
+                class="alert-heading p-2"
+                data-testid="description"
+                v-html="descriptionHTML"
+            ></div>
+            <!-- eslint-enable vue/no-v-html-->
 
             <div v-if="editMode" class="mb-4">
                 <div>
-                    <button class="btn btn-primary btn-add-group me-2" @click="addGroup">
+                    <button class="btn btn-primary btn-add-group me-2" data-testid="add-group-button" @click="addGroup">
                         <font-awesome-icon icon="plus" />
                         {{ $t("Add Group") }}
                     </button>
@@ -307,16 +464,21 @@
                             label="name"
                             trackBy="name"
                             class="mt-3"
+                            data-testid="monitor-select"
                         >
                             <template #option="{ option }">
                                 <div class="d-inline-flex">
-                                    <span>{{ option.pathName }} <Tag v-for="tag in option.tags" :key="tag" :item="tag" :size="'sm'" /></span>
+                                    <span>
+                                        {{ option.pathName }}
+                                        <Tag v-for="tag in option.tags" :key="tag" :item="tag" :size="'sm'" />
+                                    </span>
                                 </div>
                             </template>
                         </VueMultiselect>
                     </div>
                     <div v-else class="text-center">
-                        {{ $t("No monitors available.") }}  <router-link to="/add">{{ $t("Add one") }}</router-link>
+                        {{ $t("No monitors available.") }}
+                        <router-link to="/add">{{ $t("Add one") }}</router-link>
                     </div>
                 </div>
             </div>
@@ -327,29 +489,109 @@
                     👀 {{ $t("statusPageNothing") }}
                 </div>
 
-                <PublicGroupList :edit-mode="enableEditMode" :show-tags="config.showTags" :show-certificate-expiry="config.showCertificateExpiry" />
+                <PublicGroupList
+                    :edit-mode="enableEditMode"
+                    :show-tags="config.showTags"
+                    :show-certificate-expiry="config.showCertificateExpiry"
+                    :show-only-last-heartbeat="config.showOnlyLastHeartbeat"
+                />
             </div>
+
+            <!-- Past Incidents -->
+            <div v-if="pastIncidentCount > 0" class="past-incidents-section mb-4">
+                <h2 class="past-incidents-title mb-3">
+                    {{ $t("Past Incidents") }}
+                </h2>
+
+                <div class="past-incidents-content">
+                    <div
+                        v-for="(dateGroup, dateKey) in groupedIncidentHistory"
+                        :key="dateKey"
+                        class="incident-date-group mb-4"
+                    >
+                        <h4 class="incident-date-header">{{ dateKey }}</h4>
+                        <div class="shadow-box incident-list-box">
+                            <IncidentHistory
+                                :incidents="dateGroup"
+                                :edit-mode="enableEditMode"
+                                :loading="incidentHistoryLoading"
+                                @edit-incident="$refs.incidentManageModal.showEdit($event)"
+                                @delete-incident="$refs.incidentManageModal.showDelete($event)"
+                                @resolve-incident="resolveIncident"
+                            />
+                        </div>
+                    </div>
+
+                    <div v-if="incidentHistoryHasMore" class="load-more-controls d-flex justify-content-center mt-3">
+                        <button
+                            class="btn btn-outline-secondary btn-sm"
+                            :disabled="incidentHistoryLoading"
+                            @click="loadMoreIncidentHistory"
+                        >
+                            <span
+                                v-if="incidentHistoryLoading"
+                                class="spinner-border spinner-border-sm me-1"
+                                role="status"
+                            ></span>
+                            {{ $t("Load More") }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Incident Manage Modal -->
+            <IncidentManageModal
+                v-if="enableEditMode"
+                ref="incidentManageModal"
+                :slug="slug"
+                @incident-updated="loadIncidentHistory"
+            />
 
             <footer class="mt-5 mb-4">
                 <div class="custom-footer-text text-start">
                     <strong v-if="enableEditMode">{{ $t("Custom Footer") }}:</strong>
                 </div>
-                <Editable v-if="enableEditMode" v-model="config.footerText" tag="div" :contenteditable="enableEditMode" :noNL="false" class="alert-heading p-2" />
-                <!-- eslint-disable-next-line vue/no-v-html-->
-                <div v-if="! enableEditMode" class="alert-heading p-2" v-html="footerHTML"></div>
+                <Editable
+                    v-if="enableEditMode"
+                    v-model="config.footerText"
+                    tag="div"
+                    :contenteditable="enableEditMode"
+                    :noNL="false"
+                    class="alert-heading p-2"
+                    data-testid="custom-footer-editable"
+                />
+                <!-- eslint-disable vue/no-v-html-->
+                <div
+                    v-if="!enableEditMode"
+                    class="alert-heading p-2"
+                    data-testid="footer-text"
+                    v-html="footerHTML"
+                ></div>
+                <!-- eslint-enable vue/no-v-html-->
 
-                <p v-if="config.showPoweredBy">
-                    {{ $t("Powered by") }} <a target="_blank" rel="noopener noreferrer" href="https://github.com/louislam/uptime-kuma">{{ $t("Uptime Kuma" ) }}</a>
+                <p v-if="config.showPoweredBy" data-testid="powered-by">
+                    {{ $t("Powered by") }}
+                    <a target="_blank" rel="noopener noreferrer" href="https://github.com/louislam/uptime-kuma">
+                        {{ $t("Uptime Kuma") }}
+                    </a>
                 </p>
 
                 <div class="refresh-info mb-2">
-                    <div>{{ $t("Last Updated") }}:  {{ lastUpdateTimeDisplay }}</div>
-                    <div>{{ $tc("statusPageRefreshIn", [ updateCountdownText]) }}</div>
+                    <div>{{ $t("lastUpdatedAt", { date: lastUpdateTimeDisplay }) }}</div>
+                    <div data-testid="update-countdown-text">
+                        {{ $t("statusPageRefreshIn", [updateCountdownText]) }}
+                    </div>
                 </div>
             </footer>
         </div>
 
-        <Confirm ref="confirmDelete" btn-style="btn-danger" :yes-text="$t('Yes')" :no-text="$t('No')" @yes="deleteStatusPage">
+        <Confirm
+            ref="confirmDelete"
+            btn-style="btn-danger"
+            :yes-text="$t('Yes')"
+            :no-text="$t('No')"
+            @yes="deleteStatusPage"
+        >
             {{ $t("deleteStatusPageMsg") }}
         </Confirm>
 
@@ -378,10 +620,22 @@ import DOMPurify from "dompurify";
 import Confirm from "../components/Confirm.vue";
 import PublicGroupList from "../components/PublicGroupList.vue";
 import MaintenanceTime from "../components/MaintenanceTime.vue";
+import IncidentHistory from "../components/IncidentHistory.vue";
+import IncidentManageModal from "../components/IncidentManageModal.vue";
+import IncidentEditForm from "../components/IncidentEditForm.vue";
 import { getResBaseURL } from "../util-frontend";
-import { STATUS_PAGE_ALL_DOWN, STATUS_PAGE_ALL_UP, STATUS_PAGE_MAINTENANCE, STATUS_PAGE_PARTIAL_DOWN, UP, MAINTENANCE } from "../util.ts";
+import { authClient } from "../auth-client";
+import {
+    STATUS_PAGE_ALL_DOWN,
+    STATUS_PAGE_ALL_UP,
+    STATUS_PAGE_MAINTENANCE,
+    STATUS_PAGE_PARTIAL_DOWN,
+    UP,
+    MAINTENANCE,
+} from "../util.ts";
 import Tag from "../components/Tag.vue";
 import VueMultiselect from "vue-multiselect";
+import { applyHeartbeatSnapshot } from "../beat-state";
 
 const toast = useToast();
 dayjs.extend(duration);
@@ -392,10 +646,11 @@ const leavePageMsg = "Do you really want to leave? you have unsaved changes!";
 let feedInterval;
 
 const favicon = new Favico({
-    animation: "none"
+    animation: "none",
 });
 
 export default {
+    _authPromise: null,
 
     components: {
         PublicGroupList,
@@ -404,7 +659,10 @@ export default {
         PrismEditor,
         MaintenanceTime,
         Tag,
-        VueMultiselect
+        VueMultiselect,
+        IncidentHistory,
+        IncidentManageModal,
+        IncidentEditForm,
     },
 
     // Leave Page for vue route change
@@ -434,8 +692,10 @@ export default {
             slug: null,
             enableEditMode: false,
             enableEditIncidentMode: false,
-            hasToken: false,
-            config: {},
+            authenticated: false,
+            config: {
+                analyticsType: null,
+            },
             selectedMonitor: null,
             incident: null,
             previousIncident: null,
@@ -450,10 +710,13 @@ export default {
             updateCountdown: null,
             updateCountdownText: null,
             loading: true,
+            incidentHistory: [],
+            incidentHistoryLoading: false,
+            incidentHistoryNextCursor: null,
+            incidentHistoryHasMore: false,
         };
     },
     computed: {
-
         logoURL() {
             if (this.imgDataUrl.startsWith("data:")) {
                 return this.imgDataUrl;
@@ -470,14 +733,13 @@ export default {
             let result = [];
 
             for (let id in this.$root.monitorList) {
-                if (this.$root.monitorList[id] && ! (id in this.$root.publicMonitorList)) {
+                if (this.$root.monitorList[id] && !(id in this.$root.publicMonitorList)) {
                     let monitor = this.$root.monitorList[id];
                     result.push(monitor);
                 }
             }
 
             result.sort((m1, m2) => {
-
                 if (m1.active !== m2.active) {
                     if (m1.active === 0) {
                         return 1;
@@ -525,16 +787,11 @@ export default {
             return {};
         },
 
-        incidentClass() {
-            return "bg-" + this.incident.style;
-        },
-
         maintenanceClass() {
             return "bg-maintenance";
         },
 
         overallStatus() {
-
             if (Object.keys(this.$root.publicLastHeartbeatList).length === 0) {
                 return -1;
             }
@@ -554,7 +811,7 @@ export default {
                 }
             }
 
-            if (! hasUp) {
+            if (!hasUp) {
                 status = STATUS_PAGE_ALL_DOWN;
             }
 
@@ -578,7 +835,7 @@ export default {
         },
 
         incidentHTML() {
-            if (this.incident.content != null) {
+            if (this.incident && this.incident.content != null) {
                 return DOMPurify.sanitize(marked(this.incident.content));
             } else {
                 return "";
@@ -603,10 +860,43 @@ export default {
 
         lastUpdateTimeDisplay() {
             return this.$root.datetime(this.lastUpdateTime);
-        }
+        },
+
+        /**
+         * Get all active pinned incidents for display at the top
+         * @returns {object[]} List of active pinned incidents
+         */
+        activeIncidents() {
+            return this.incidentHistory.filter((i) => i.active && i.pin);
+        },
+
+        /**
+         * Count of past incidents (non-active or unpinned)
+         * @returns {number} Number of past incidents
+         */
+        pastIncidentCount() {
+            return this.incidentHistory.filter((i) => !(i.active && i.pin)).length;
+        },
+
+        /**
+         * Group past incidents (non-active or unpinned) by date for display
+         * Active+pinned incidents are shown separately at the top, not in this section
+         * @returns {object} Incidents grouped by date string
+         */
+        groupedIncidentHistory() {
+            const groups = {};
+            const pastIncidents = this.incidentHistory.filter((i) => !(i.active && i.pin));
+            for (const incident of pastIncidents) {
+                const dateKey = this.formatDateKey(incident.createdDate);
+                if (!groups[dateKey]) {
+                    groups[dateKey] = [];
+                }
+                groups[dateKey].push(incident);
+            }
+            return groups;
+        },
     },
     watch: {
-
         /**
          * If connected to the socket and logged in, request private data of this statusPage
          * @param {boolean} loggedIn Is the client logged in?
@@ -614,16 +904,14 @@ export default {
          */
         "$root.loggedIn"(loggedIn) {
             if (loggedIn) {
+                this.authenticated = true;
                 this.$root.getSocket().emit("getStatusPage", this.slug, (res) => {
                     if (res.ok) {
                         this.config = res.config;
 
                         if (!this.config.customCSS) {
-                            this.config.customCSS = "body {\n" +
-                                "  \n" +
-                                "}\n";
+                            this.config.customCSS = "body {\n" + "  \n" + "}\n";
                         }
-
                     } else {
                         this.$root.toastError(res.msg);
                     }
@@ -672,11 +960,17 @@ export default {
                     }
                 }
             }
-        }
-
+        },
     },
-    async created() {
-        this.hasToken = ("token" in this.$root.storage());
+    created() {
+        this._authPromise = authClient
+            .getSession()
+            .then((session) => {
+                this.authenticated = session.data !== null;
+            })
+            .catch(() => {
+                this.authenticated = false;
+            });
 
         // Browser change page
         // https://stackoverflow.com/questions/7317273/warn-user-before-leaving-web-page-with-unsaved-changes
@@ -699,46 +993,51 @@ export default {
             this.slug = "default";
         }
 
-        this.getData().then((res) => {
-            this.config = res.data.config;
+        this.getData()
+            .then((res) => {
+                this.config = res.data.config;
 
-            if (!this.config.domainNameList) {
-                this.config.domainNameList = [];
-            }
+                if (!this.config.domainNameList) {
+                    this.config.domainNameList = [];
+                }
 
-            if (this.config.icon) {
-                this.imgDataUrl = this.config.icon;
-            }
+                if (this.config.icon) {
+                    this.imgDataUrl = this.config.icon;
+                }
 
-            this.incident = res.data.incident;
-            this.maintenanceList = res.data.maintenanceList;
-            this.$root.publicGroupList = res.data.publicGroupList;
+                this.maintenanceList = res.data.maintenanceList;
+                this.$root.publicGroupList = res.data.publicGroupList;
 
-            this.loading = false;
+                this.loading = false;
 
-            // Configure auto-refresh loop
-            feedInterval = setInterval(() => {
-                this.updateHeartbeatList();
-            }, (this.config.autoRefreshInterval + 10) * 1000);
+                // Configure auto-refresh loop
+                feedInterval = setInterval(
+                    () => {
+                        this.updateHeartbeatList();
+                    },
+                    Math.max(5, this.config.autoRefreshInterval) * 1000
+                );
 
-            this.updateUpdateTimer();
-        }).catch( function (error) {
-            if (error.response.status === 404) {
-                location.href = "/page-not-found";
-            }
-            console.log(error);
-        });
+                this.updateUpdateTimer();
+            })
+            .catch(function (error) {
+                if (error.response.status === 404) {
+                    location.href = "/page-not-found";
+                }
+                console.log(error);
+            });
 
         this.updateHeartbeatList();
+        this.loadIncidentHistory();
 
         // Go to edit page if ?edit present
         // null means ?edit present, but no value
         if (this.$route.query.edit || this.$route.query.edit === null) {
+            await this._authPromise;
             this.edit();
         }
     },
     methods: {
-
         /**
          * Get status page data
          * It should be preloaded in window.preloadData
@@ -746,9 +1045,11 @@ export default {
          */
         getData: function () {
             if (window.preloadData) {
-                return new Promise(resolve => resolve({
-                    data: window.preloadData
-                }));
+                return new Promise((resolve) =>
+                    resolve({
+                        data: window.preloadData,
+                    })
+                );
             } else {
                 return axios.get("/api/status-page/" + this.slug);
             }
@@ -769,12 +1070,13 @@ export default {
          */
         updateHeartbeatList() {
             // If editMode, it will use the data from websocket.
-            if (! this.editMode) {
+            if (!this.editMode) {
                 axios.get("/api/status-page/heartbeat/" + this.slug).then((res) => {
                     const { heartbeatList, uptimeList } = res.data;
 
                     this.$root.heartbeatList = heartbeatList;
                     this.$root.uptimeList = uptimeList;
+                    applyHeartbeatSnapshot(this.$root, heartbeatList, this.$t.bind(this));
 
                     const heartbeatIds = Object.keys(heartbeatList);
                     const downMonitors = heartbeatIds.reduce((downMonitorsAmount, currentId) => {
@@ -805,7 +1107,15 @@ export default {
             clearInterval(this.updateCountdown);
 
             this.updateCountdown = setInterval(() => {
-                const countdown = dayjs.duration(this.lastUpdateTime.add(this.config.autoRefreshInterval, "seconds").add(10, "seconds").diff(dayjs()));
+                // rounding here as otherwise we sometimes skip numbers in cases of time drift
+                const countdown = dayjs.duration(
+                    Math.round(
+                        this.lastUpdateTime.add(Math.max(5, this.config.autoRefreshInterval), "seconds").diff(dayjs()) /
+                            1000
+                    ),
+                    "seconds"
+                );
+
                 if (countdown.as("seconds") < 0) {
                     clearInterval(this.updateCountdown);
                 } else {
@@ -819,7 +1129,7 @@ export default {
          * @returns {void}
          */
         edit() {
-            if (this.hasToken) {
+            if (this.authenticated) {
                 this.$root.initSocketIO(true);
                 this.enableEditMode = true;
                 this.clickedEditButton = true;
@@ -838,29 +1148,30 @@ export default {
             let startTime = new Date();
             this.config.slug = this.config.slug.trim().toLowerCase();
 
-            this.$root.getSocket().emit("saveStatusPage", this.slug, this.config, this.imgDataUrl, this.$root.publicGroupList, (res) => {
-                if (res.ok) {
-                    this.enableEditMode = false;
-                    this.$root.publicGroupList = res.publicGroupList;
+            this.$root
+                .getSocket()
+                .emit("saveStatusPage", this.slug, this.config, this.imgDataUrl, this.$root.publicGroupList, (res) => {
+                    if (res.ok) {
+                        this.enableEditMode = false;
+                        this.$root.publicGroupList = res.publicGroupList;
 
-                    // Add some delay, so that the side menu animation would be better
-                    let endTime = new Date();
-                    let time = 100 - (endTime - startTime) / 1000;
+                        // Add some delay, so that the side menu animation would be better
+                        let endTime = new Date();
+                        let time = 100 - (endTime - startTime) / 1000;
 
-                    if (time < 0) {
-                        time = 0;
-                    }
+                        if (time < 0) {
+                            time = 0;
+                        }
 
-                    setTimeout(() => {
+                        setTimeout(() => {
+                            this.loading = false;
+                            location.href = "/status/" + this.config.slug;
+                        }, time);
+                    } else {
                         this.loading = false;
-                        location.href = "/status/" + this.config.slug;
-                    }, time);
-
-                } else {
-                    this.loading = false;
-                    toast.error(res.msg);
-                }
-            });
+                        toast.error(res.msg);
+                    }
+                });
         },
 
         /**
@@ -948,6 +1259,20 @@ export default {
         },
 
         /**
+         * Reset logo image to default (public/icon.svg)
+         * @returns {void}
+         */
+        resetToDefaultImage() {
+            if (!this.editMode) {
+                return;
+            }
+
+            this.imgDataUrl = "/icon.svg";
+            this.config.icon = this.imgDataUrl;
+            toast.success(this.$t("imageResetConfirmation"));
+        },
+
+        /**
          * Create an incident for this status page
          * @returns {void}
          */
@@ -976,25 +1301,25 @@ export default {
             }
 
             this.$root.getSocket().emit("postIncident", this.slug, this.incident, (res) => {
-
                 if (res.ok) {
                     this.enableEditIncidentMode = false;
-                    this.incident = res.incident;
+                    this.incident = null;
+                    this.loadIncidentHistory();
                 } else {
                     this.$root.toastError(res.msg);
                 }
-
             });
-
         },
 
         /**
-         * Click Edit Button
+         * Edit an incident inline
+         * @param {object} incident - The incident to edit
          * @returns {void}
          */
-        editIncident() {
+        editIncident(incident) {
+            this.previousIncident = this.incident;
+            this.incident = { ...incident };
             this.enableEditIncidentMode = true;
-            this.previousIncident = Object.assign({}, this.incident);
         },
 
         /**
@@ -1018,6 +1343,18 @@ export default {
             this.$root.getSocket().emit("unpinIncident", this.slug, () => {
                 this.incident = null;
             });
+        },
+
+        /**
+         * Get HTML for incident content
+         * @param {string} content - Markdown content
+         * @returns {string} Sanitized HTML
+         */
+        getIncidentHTML(content) {
+            if (content != null) {
+                return DOMPurify.sanitize(marked(content));
+            }
+            return "";
         },
 
         /**
@@ -1051,7 +1388,105 @@ export default {
             }
         },
 
-    }
+        /**
+         * Load incident history for the status page
+         * @returns {void}
+         */
+        loadIncidentHistory() {
+            this.loadIncidentHistoryWithCursor(null);
+        },
+
+        /**
+         * Load incident history using cursor-based pagination
+         * @param {string|null} cursor - Cursor for pagination (created_date of last item)
+         * @param {boolean} append - Whether to append to existing list
+         * @returns {void}
+         */
+        loadIncidentHistoryWithCursor(cursor, append = false) {
+            this.incidentHistoryLoading = true;
+
+            if (this.enableEditMode) {
+                this.$root.getSocket().emit("getIncidentHistory", this.slug, cursor, (res) => {
+                    this.incidentHistoryLoading = false;
+                    if (res.ok) {
+                        if (append) {
+                            this.incidentHistory = [...this.incidentHistory, ...res.incidents];
+                        } else {
+                            this.incidentHistory = res.incidents;
+                        }
+                        this.incidentHistoryNextCursor = res.nextCursor;
+                        this.incidentHistoryHasMore = res.hasMore;
+                    } else {
+                        console.error("Failed to load incident history:", res.msg);
+                        this.$root.toastError(res.msg);
+                    }
+                });
+            } else {
+                const url = cursor
+                    ? `/api/status-page/${this.slug}/incident-history?cursor=${encodeURIComponent(cursor)}`
+                    : `/api/status-page/${this.slug}/incident-history`;
+                axios
+                    .get(url)
+                    .then((res) => {
+                        this.incidentHistoryLoading = false;
+                        if (res.data.ok) {
+                            if (append) {
+                                this.incidentHistory = [...this.incidentHistory, ...res.data.incidents];
+                            } else {
+                                this.incidentHistory = res.data.incidents;
+                            }
+                            this.incidentHistoryNextCursor = res.data.nextCursor;
+                            this.incidentHistoryHasMore = res.data.hasMore;
+                        }
+                    })
+                    .catch((error) => {
+                        this.incidentHistoryLoading = false;
+                        console.error("Failed to load incident history:", error);
+                    });
+            }
+        },
+
+        /**
+         * Load more incident history using cursor-based pagination
+         * @returns {void}
+         */
+        loadMoreIncidentHistory() {
+            if (this.incidentHistoryHasMore && this.incidentHistoryNextCursor) {
+                this.loadIncidentHistoryWithCursor(this.incidentHistoryNextCursor, true);
+            }
+        },
+
+        /**
+         * Format date key for grouping (e.g., "December 8, 2025")
+         * @param {string} dateStr - ISO date string
+         * @returns {string} Formatted date key
+         */
+        formatDateKey(dateStr) {
+            if (!dateStr) {
+                return this.$t("Unknown");
+            }
+            const date = new Date(dateStr);
+            return date.toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+            });
+        },
+
+        /**
+         * Resolve an incident
+         * @param {object} incident - The incident to resolve
+         * @returns {void}
+         */
+        resolveIncident(incident) {
+            this.$root.getSocket().emit("resolveIncident", this.slug, incident.id, (res) => {
+                this.$root.toastRes(res);
+                if (res.ok) {
+                    this.loadIncidentHistory();
+                }
+            });
+        },
+    },
 };
 </script>
 
@@ -1166,6 +1601,61 @@ footer {
         cursor: pointer;
         box-shadow: 0 15px 70px rgba(0, 0, 0, 0.9);
     }
+
+    /* Reset button placed at top-left of the logo */
+    .reset-top-left {
+        transition:
+            transform $easing-in 0.18s,
+            box-shadow $easing-in 0.18s,
+            background-color $easing-in 0.18s;
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: white;
+        border: none;
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+        cursor: pointer;
+        transform-origin: center;
+
+        &:hover {
+            background-color: rgba(0, 0, 0, 0.06);
+            transform: scale(1.18);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+        }
+
+        &:hover ~ .icon-upload {
+            transform: none !important;
+        }
+    }
+
+    .small-reset-btn {
+        transition:
+            transform $easing-in 0.18s,
+            box-shadow $easing-in 0.18s,
+            background-color $easing-in 0.18s;
+        font-size: 18px;
+        width: 18px;
+        height: 18px;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: transparent;
+        border: none;
+        cursor: pointer;
+
+        &:hover {
+            background-color: rgba(0, 0, 0, 0.04);
+            transform: scale(1.18);
+            box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+        }
+    }
 }
 
 .logo {
@@ -1267,4 +1757,27 @@ footer {
     opacity: 0.7;
 }
 
+.past-incidents-title {
+    font-size: 26px;
+    font-weight: normal;
+}
+
+.past-incidents-section {
+    .past-incidents-content {
+        padding: 0;
+    }
+}
+
+.incident-date-group {
+    .incident-date-header {
+        font-size: 1rem;
+        font-weight: normal;
+        color: var(--bs-secondary);
+        margin-bottom: 0.75rem;
+    }
+
+    .incident-list-box {
+        padding: 0;
+    }
+}
 </style>

@@ -7,29 +7,48 @@
                         <h5 id="exampleModalLabel" class="modal-title">
                             {{ $t("Add a Remote Browser") }}
                         </h5>
-                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" />
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" :aria-label="$t('Close')" />
                     </div>
                     <div class="modal-body">
                         <div class="mb-3">
                             <label for="remote-browser-name" class="form-label">{{ $t("Friendly Name") }}</label>
-                            <input id="remote-browser-name" v-model="remoteBrowser.name" type="text" class="form-control" required>
+                            <input
+                                id="remote-browser-name"
+                                v-model="remoteBrowser.name"
+                                type="text"
+                                class="form-control"
+                                required
+                            />
                         </div>
 
                         <div class="mb-3">
                             <label for="remote-browser-url" class="form-label">{{ $t("URL") }}</label>
-                            <input id="remote-browser-url" v-model="remoteBrowser.url" type="text" class="form-control" required>
+                            <input
+                                id="remote-browser-url"
+                                v-model="remoteBrowser.url"
+                                type="text"
+                                class="form-control"
+                                required
+                            />
 
-                            <div class="form-text mt-3">
-                                {{ $t("Examples") }}:
-                                <ul>
-                                    <li>ws://chrome.browserless.io/playwright?token=YOUR-API-TOKEN</li>
-                                </ul>
+                            <i18n-t tag="div" keypath="Example:" class="form-text mt-3">
+                                <code>ws://chrome.browserless.io/playwright?token=YOUR-API-TOKEN</code>
+                            </i18n-t>
+
+                            <div class="text-danger mt-3" role="alert">
+                                {{ $t("browserlessSupportedVersion", { version: browserlessVersion }) }}
                             </div>
                         </div>
                     </div>
 
                     <div class="modal-footer">
-                        <button v-if="id" type="button" class="btn btn-danger" :disabled="processing" @click="deleteConfirm">
+                        <button
+                            v-if="id"
+                            type="button"
+                            class="btn btn-danger"
+                            :disabled="processing"
+                            @click="deleteConfirm"
+                        >
                             {{ $t("Delete") }}
                         </button>
                         <button type="button" class="btn btn-warning" :disabled="processing" @click="test">
@@ -45,7 +64,13 @@
         </div>
     </form>
 
-    <Confirm ref="confirmDelete" btn-style="btn-danger" :yes-text="$t('Yes')" :no-text="$t('No')" @yes="deleteDockerHost">
+    <Confirm
+        ref="confirmDelete"
+        btn-style="btn-danger"
+        :yes-text="$t('Yes')"
+        :no-text="$t('No')"
+        @yes="deleteDockerHost"
+    >
         {{ $t("deleteRemoteBrowserMessage") }}
     </Confirm>
 </template>
@@ -59,17 +84,19 @@ export default {
         Confirm,
     },
     props: {},
-    emits: [ "added" ],
+    emits: ["added"],
     data() {
         return {
             modal: null,
             processing: false,
             id: null,
+            // Browserless releases that still list playwright-core 1.64.1 as supported
+            browserlessVersion: "2.57.3",
             remoteBrowser: {
                 name: "",
                 url: "",
                 // Do not set default value here, please scroll to show()
-            }
+            },
         };
     },
 
@@ -77,7 +104,6 @@ export default {
         this.modal = new Modal(this.$refs.modal);
     },
     methods: {
-
         /**
          * Confirm deletion of docker host
          * @returns {void}
@@ -109,7 +135,6 @@ export default {
                 if (!found) {
                     this.$root.toastError(this.$t("Remote Browser not found!"));
                 }
-
             } else {
                 this.id = null;
                 this.remoteBrowser = {
@@ -135,10 +160,9 @@ export default {
                     this.modal.hide();
 
                     // Emit added event, doesn't emit edit.
-                    if (! this.id) {
+                    if (!this.id) {
                         this.$emit("added", res.id);
                     }
-
                 }
             });
         },
@@ -178,7 +202,8 @@ export default {
 @import "../assets/vars.scss";
 
 .dark {
-    .modal-dialog .form-text, .modal-dialog p {
+    .modal-dialog .form-text,
+    .modal-dialog p {
         color: $dark-font-color;
     }
 }

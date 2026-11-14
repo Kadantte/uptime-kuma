@@ -1,6 +1,12 @@
 <template>
-    <div tabindex="-1" class="dropdown" @focusin="open = true" @focusout="handleFocusOut">
-        <button type="button" class="filter-dropdown-status" :class="{ 'active': filterActive }" tabindex="0">
+    <div tabindex="-1" class="dropdown" @focusin="openMenu" @focusout="handleFocusOut">
+        <button
+            type="button"
+            class="filter-dropdown-status"
+            :class="{ active: filterActive }"
+            tabindex="0"
+            :data-testid="testId"
+        >
             <div class="px-1 d-flex align-items-center">
                 <slot name="status"></slot>
             </div>
@@ -8,37 +14,44 @@
                 <font-awesome-icon icon="angle-down" />
             </span>
         </button>
-        <ul class="filter-dropdown-menu" :class="{ 'open': open }">
+        <ul class="filter-dropdown-menu" :class="{ open: open }">
             <slot name="dropdown"></slot>
         </ul>
     </div>
 </template>
 
 <script>
-
 export default {
-    components: {
-
-    },
+    components: {},
     props: {
         filterActive: {
             type: Boolean,
             required: true,
-        }
+        },
+        testId: {
+            type: String,
+            default: undefined,
+        },
     },
+    emits: ["openMenu"],
     data() {
         return {
-            open: false
+            open: false,
         };
     },
     methods: {
+        openMenu() {
+            this.$emit("openMenu");
+            this.open = true;
+        },
+
         handleFocusOut(e) {
             if (e.relatedTarget != null && this.$el.contains(e.relatedTarget)) {
                 return;
             }
             this.open = false;
-        }
-    }
+        },
+    },
 };
 </script>
 
@@ -106,7 +119,7 @@ export default {
     @extend .btn-outline-normal;
     display: flex;
     align-items: center;
-    margin-left: 5px;
+    margin-left: 0;
     color: $link-color;
 
     .dark & {

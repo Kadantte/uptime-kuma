@@ -1,7 +1,8 @@
-const { checkLogin, setSetting, setting, doubleCheckPassword } = require("../util-server");
+const { checkLogin, setSetting, setting } = require("../util");
 const { CloudflaredTunnel } = require("node-cloudflared-tunnel");
 const { UptimeKumaServer } = require("../uptime-kuma-server");
 const { log } = require("../../src/util");
+const { doubleCheckPassword } = require("../better-auth");
 const io = UptimeKumaServer.getInstance().io;
 
 const prefix = "cloudflared_";
@@ -33,7 +34,6 @@ cloudflared.error = (errorMessage) => {
  * @returns {void}
  */
 module.exports.cloudflaredSocketHandler = (socket) => {
-
     socket.on(prefix + "join", async () => {
         try {
             checkLogin(socket);
@@ -41,14 +41,18 @@ module.exports.cloudflaredSocketHandler = (socket) => {
             io.to(socket.userID).emit(prefix + "installed", cloudflared.checkInstalled());
             io.to(socket.userID).emit(prefix + "running", cloudflared.running);
             io.to(socket.userID).emit(prefix + "token", await setting("cloudflaredTunnelToken"));
-        } catch (error) { }
+        } catch (error) {
+            log.error("cloudflared", "Error in join handler: " + error.message);
+        }
     });
 
     socket.on(prefix + "leave", async () => {
         try {
             checkLogin(socket);
             socket.leave("cloudflared");
-        } catch (error) { }
+        } catch (error) {
+            log.error("cloudflared", "Error in leave handler: " + error.message);
+        }
     });
 
     socket.on(prefix + "start", async (token) => {
@@ -61,7 +65,9 @@ module.exports.cloudflaredSocketHandler = (socket) => {
                 cloudflared.token = null;
             }
             cloudflared.start();
-        } catch (error) { }
+        } catch (error) {
+            log.error("cloudflared", "Error in start handler: " + error.message);
+        }
     });
 
     socket.on(prefix + "stop", async (currentPassword, callback) => {
@@ -69,7 +75,7 @@ module.exports.cloudflaredSocketHandler = (socket) => {
             checkLogin(socket);
             const disabledAuth = await setting("disableAuth");
             if (!disabledAuth) {
-                await doubleCheckPassword(socket, currentPassword);
+                await doubleCheckPassword(socket.request.headers.cookie, currentPassword);
             }
             cloudflared.stop();
         } catch (error) {
@@ -84,9 +90,10 @@ module.exports.cloudflaredSocketHandler = (socket) => {
         try {
             checkLogin(socket);
             await setSetting("cloudflaredTunnelToken", "");
-        } catch (error) { }
+        } catch (error) {
+            log.error("cloudflared", "Error in removeToken handler: " + error.message);
+        }
     });
-
 };
 
 /**
@@ -100,11 +107,11 @@ module.exports.autoStart = async (token) => {
     } else {
         // Override the current token via args or env var
         await setSetting("cloudflaredTunnelToken", token);
-        console.log("Use cloudflared token from args or env var");
+        log.info("cloudflare", "Use cloudflared token from args or env var");
     }
 
     if (token) {
-        console.log("Start cloudflared");
+        log.info("cloudflare", "Start cloudflared");
         cloudflared.token = token;
         cloudflared.start();
     }

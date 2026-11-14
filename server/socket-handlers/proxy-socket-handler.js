@@ -1,4 +1,4 @@
-const { checkLogin } = require("../util-server");
+const { checkLogin } = require("../util");
 const { Proxy } = require("../proxy");
 const { sendProxyList } = require("../client");
 const { UptimeKumaServer } = require("../uptime-kuma-server");
@@ -28,7 +28,6 @@ module.exports.proxySocketHandler = (socket) => {
                 msgi18n: true,
                 id: proxyBean.id,
             });
-
         } catch (e) {
             callback({
                 ok: false,
@@ -41,7 +40,7 @@ module.exports.proxySocketHandler = (socket) => {
         try {
             checkLogin(socket);
 
-            await Proxy.delete(proxyID, socket.userID);
+            await Proxy.delete(proxyID);
             await sendProxyList(socket);
             await Proxy.reloadProxy();
 
@@ -50,7 +49,6 @@ module.exports.proxySocketHandler = (socket) => {
                 msg: "successDeleted",
                 msgi18n: true,
             });
-
         } catch (e) {
             callback({
                 ok: false,

@@ -1,5 +1,5 @@
 const { sendDockerHostList } = require("../client");
-const { checkLogin } = require("../util-server");
+const { checkLogin } = require("../util");
 const { DockerHost } = require("../docker");
 const { log } = require("../../src/util");
 
@@ -22,7 +22,6 @@ module.exports.dockerSocketHandler = (socket) => {
                 msgi18n: true,
                 id: dockerHostBean.id,
             });
-
         } catch (e) {
             callback({
                 ok: false,
@@ -35,7 +34,7 @@ module.exports.dockerSocketHandler = (socket) => {
         try {
             checkLogin(socket);
 
-            await DockerHost.delete(dockerHostID, socket.userID);
+            await DockerHost.delete(dockerHostID);
             await sendDockerHostList(socket);
 
             callback({
@@ -43,7 +42,6 @@ module.exports.dockerSocketHandler = (socket) => {
                 msg: "successDeleted",
                 msgi18n: true,
             });
-
         } catch (e) {
             callback({
                 ok: false,
@@ -69,7 +67,6 @@ module.exports.dockerSocketHandler = (socket) => {
                 ok: true,
                 msg,
             });
-
         } catch (e) {
             log.error("docker", e);
 
